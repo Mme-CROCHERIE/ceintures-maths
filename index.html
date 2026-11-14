@@ -231,6 +231,26 @@ table.mini{width:auto;margin:.5rem 0;font-size:.95rem}table.mini th,table.mini t
 
 details.import{margin:.8rem 0;padding:.6rem .9rem;border:1px solid var(--line);border-radius:8px}details.import summary{cursor:pointer;font-weight:700}
 
+table.ladder td:first-child{border-right:2px solid currentColor;text-align:right}table.ladder td{border:none;padding:.1rem .6rem}
+
+.pill{display:inline-block;background:#FFE66B;color:#1C2A39;border-radius:999px;padding:0 .55em;font-weight:700;box-shadow:0 0 0 2px #E9A800 inset}
+@media (prefers-color-scheme:dark){.pill{background:#6B5A12;color:#FFF3B0}}
+.echo{display:inline-block;min-width:2em;border-bottom:2px dotted var(--ink2);text-align:center}
+.sublay{display:grid;width:fit-content;grid-template-columns:auto auto auto auto;column-gap:.45em;row-gap:.35em;align-items:center;margin:.5rem 0}
+.sublay>span{text-align:center}.sublay .span3{grid-column:span 3;text-align:left}
+table.conv th,table.conv td{min-width:2.4em;position:relative}table.conv .to{background:var(--yellow-soft);font-weight:700}
+table.conv .virg{position:absolute;right:-.25em;bottom:.1em;color:var(--red);font-weight:700}
+
+.sym{font-size:1.15em;color:#7E3AA8}@media (prefers-color-scheme:dark){.sym{color:#C99BEB}}
+
+.sv-green{stroke:var(--green)}.sv-greent{fill:var(--green)}
+
+.barre{text-decoration:line-through;text-decoration-color:var(--blue);text-decoration-thickness:2px;color:var(--ink2)}
+
+.cf{color:#1F4FA8}.cv{color:#D9480F}@media (prefers-color-scheme:dark){.cf{color:#86ABF5}.cv{color:#FF9F68}}
+.sv-grp{fill:rgba(255,214,0,.32);stroke:#E9A800;stroke-width:2}.sv-cvt{fill:#D9480F}
+.patlab{text-align:center;font-size:14px;line-height:1.35;color:var(--ink)}
+
 </style>
 </head>
 <body>
@@ -394,6 +414,19 @@ function readField(f, raw) {
       return { ok: true, v: parts.map(Number) };
     }
     case 'add': return parseAddition(raw);
+    case 'signed': { // somme écrite sans parenthèses : −3 + 5 + 2
+      const t = normMath(raw); if (!t) return { ok: false, msg: 'Écris ta réponse dans la case.' };
+      if (/[()]/.test(t)) return { ok: false, msg: 'Écris le calcul sans parenthèses, par exemple −3 + 5 + 2.' };
+      if (!/^[+-]?\d+(\.\d+)?([+-]\d+(\.\d+)?)+$/.test(t)) return { ok: false, msg: 'Écris une suite de nombres séparés par + ou −, par exemple −3 + 5 + 2.' };
+      return { ok: true, v: t.match(/[+-]?\d+(\.\d+)?/g).map(Number) };
+    }
+    case 'factors': { // produit de facteurs : 2 × 2 × 3, 2² × 3, 2^2*3
+      const t = normMath(raw).toLowerCase().replace(/x/g, '*');
+      if (!t) return { ok: false, msg: 'Écris ta réponse dans la case.' };
+      if (!/^\d+(\^\d+)?(\*\d+(\^\d+)?)*$/.test(t)) return { ok: false, msg: 'Écris un produit de nombres, par exemple 2 × 2 × 3 (tu peux utiliser ²).' };
+      const list = []; t.split('*').forEach(p => { const [b, e] = p.split('^').map(Number); for (let i = 0; i < (e || 1); i++) list.push(b); });
+      return { ok: true, v: list };
+    }
     case 'poly': case 'expr': {
       if (!String(raw).trim()) return { ok: false, msg: 'Écris ta réponse dans la case.' };
       if (f.t === 'expr' && String(raw).includes('=')) return { ok: false, msg: "Dans cette case, écris seulement le calcul, sans le signe = : le résultat va dans la case suivante." };
@@ -411,6 +444,7 @@ function checkField(f, r) {
       const [n, d] = v;
       if (f.mode === 'exact') return n === f.n && d === f.d;
       const eq = Math.abs(n * f.d - f.n * d) < 1e-9;
+      if (f.mode === 'irred') return eq && Number.isInteger(n) && Number.isInteger(d) && gcd(n, d) === 1;
       if (f.mode === 'simplify') return eq && Number.isInteger(n) && Number.isInteger(d) && Math.abs(d) < f.od;
       return eq;
     }
@@ -419,6 +453,8 @@ function checkField(f, r) {
     case 'order': { const s = f.items.slice().sort((a, b) => a - b); return v.every((x, i) => f.items[x] === s[i]); }
     case 'text': return f.a.map(normTxt).includes(normTxt(v));
     case 'list': { const a = [...new Set(v)].sort((x, y) => x - y), b = f.a.slice().sort((x, y) => x - y); return a.length === b.length && a.every((x, i) => x === b[i]); }
+    case 'signed': return v.length === f.a.length && v.every((x, i) => Math.abs(x - f.a[i]) < 1e-9);
+    case 'factors': { const isP = n => n > 1 && [...Array(Math.max(0, Math.floor(Math.sqrt(n)) - 1)).keys()].every(i => n % (i + 2)); return v.length >= 2 && v.reduce((a, b) => a * b, 1) === f.a && v.every(isP); }
     case 'add': { const a = v.slice().sort((x, y) => x - y), b = f.a.slice().sort((x, y) => x - y); return a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9); }
     case 'poly': {
       if (!pEq(v, parsePoly(f.a, f.vars || []))) return false;
@@ -546,13 +582,13 @@ function polySVG(pts, labels, marks, italic) {
   pts.forEach((p, i) => {
     const q = pts[(i + 1) % pts.length], mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
     let nx = mx - cx, ny = my - cy; const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
-    if (labels[i] != null) s += T(mx + nx * 16, my + ny * 16 + 5, labels[i], italic ? 'font-style="italic"' : '');
+    if (labels[i] != null) { const len = String(labels[i]).replace(/<[^>]+>/g, '').length, off = 14 + Math.abs(nx) * len * 4.2; s += T(mx + nx * off, my + ny * off + 5, labels[i], italic ? 'font-style="italic"' : ''); }
     if (marks[i]) { const dx = q[0] - p[0], dy = q[1] - p[1], dl = Math.hypot(dx, dy), ux = dx / dl, uy = dy / dl; for (let k = 0; k < marks[i]; k++) { const ox = mx + ux * (k * 5 - 2.5 * (marks[i] - 1)), oy = my + uy * (k * 5 - 2.5 * (marks[i] - 1)); s += `<line x1="${ox - uy * 6}" y1="${oy + ux * 6}" x2="${ox + uy * 6}" y2="${oy - ux * 6}" class="sv-red" stroke-width="1.6"/>`; } }
   });
-  return svg(260, 170, s);
+  return svg(310, 175, `<g transform="translate(28,2)">${s}</g>`);
 }
 function rectSVG(lw, lh, italic, shade) {
-  return svg(260, 130, `<rect x="40" y="25" width="190" height="85" class="${shade ? 'sv-shade' : 'sv-paper'}" stroke="currentColor" stroke-width="2"/>` + T(135, 18, lw, italic ? 'font-style="italic"' : '') + T(22, 72, lh, italic ? 'font-style="italic"' : ''));
+  return svg(280, 130, `<rect x="78" y="25" width="190" height="85" class="${shade ? 'sv-shade' : 'sv-paper'}" stroke="currentColor" stroke-width="2"/>` + T(173, 18, lw, italic ? 'font-style="italic"' : '') + `<text x="70" y="72" text-anchor="end" font-size="15" fill="currentColor" ${italic ? 'font-style="italic"' : ''}>${lh}</text>`);
 }
 // relief : élément mis en évidence ; up = montée ?
 function mountainSVG(up, mark) {
@@ -614,6 +650,84 @@ function tokensSVG(N, b, a, grouped) {
     for (let i = 0; i < g; i++) s += `<circle cx="${x0 + 19 + (i % 2) * 24}" cy="${24 + Math.floor(i / 2) * 24}" r="9.5" class="${k < a ? 'sv-c1' : 'sv-paper'}" stroke="currentColor" stroke-width="1.6"/>`;
   }
   return svg(b * (cw + 6) + 12, rows * 24 + 26, s);
+}
+
+// barre « quantité » : b parts de valeur q, a parts coloriées ; accolades sous la partie coloriée et (option) sous le reste
+function barQtySVG(b, a, q, labA, labRest) {
+  const W = 300, x0 = 10, w = W / b, y = 8, H = 40; let s = '';
+  for (let i = 0; i < b; i++) s += `<rect x="${x0 + i * w}" y="${y}" width="${w}" height="${H}" class="${i < a ? 'sv-c1' : 'sv-paper'}" stroke="currentColor" stroke-width="1.4"/>` + (w > 22 ? T(x0 + i * w + w / 2, y + 26, F(q), 'font-size="13"') : '');
+  const brace = (xa, xb, lab, cls) => { const xm = (xa + xb) / 2, xt = Math.min(Math.max(xm, 45), 275); return `<path d="M${xa},54 Q${xa},62 ${xa + 8},62 L${xm - 8},62 Q${xm},62 ${xm},70 Q${xm},62 ${xm + 8},62 L${xb - 8},62 Q${xb},62 ${xb},54" fill="none" class="${cls}" stroke-width="2"/><text x="${xt}" y="88" text-anchor="middle" font-size="14" font-weight="700" class="${cls}t">${lab}</text>`; };
+  if (labA) s += brace(x0, x0 + a * w, labA, 'sv-blue');
+  if (labRest) s += brace(x0 + a * w, x0 + W, labRest, 'sv-green');
+  return svg(320, 96, s.replace(/class="sv-bluet"/g, 'class="sv-bluet"').replace(/class="sv-redt"/g, 'class="sv-redt"'));
+}
+// courbes de niveau réalistes : formes irrégulières emboîtées (une colline ou une fosse), courbes principales en gras
+function contourSVG(levels, k, theta, isMajor) {
+  const W = 420, H = 270, n = levels.length, cx0 = 210, cy0 = 135;
+  const harm = [2, 3, 4, 5].map((f, h) => ({ f, a: (0.05 + Math.random() * 0.07) / (h + 1) * 1.6, p: Math.random() * 6.28 }));
+  const dir = Math.random() * 6.28, dx = Math.cos(dir) * 1.6, dy = Math.sin(dir) * 1.1;
+  const curve = i => {
+    const s = 1 - i * (0.8 / Math.max(1, n - 1)), cx = cx0 + dx * i * 4, cy = cy0 + dy * i * 4, pts = [];
+    for (let t = 0; t < 140; t++) {
+      const th = t / 140 * 2 * Math.PI; let rr = 1; harm.forEach(h => rr += h.a * Math.sin(h.f * th + h.p + i * 0.12));
+      pts.push([cx + 185 * s * rr * Math.cos(th), cy + 112 * s * rr * Math.sin(th)]);
+    }
+    return pts;
+  };
+  let s = `<rect x="0" y="0" width="${W}" height="${H}" class="sv-paper"/>`, labels = '', mark = '';
+  const labPos = levels.map((lv, i) => isMajor(lv) ? curve(i)[(18 + i * 9) % 140] : null).filter(Boolean);
+  levels.forEach((lv, i) => {
+    const pts = curve(i), major = isMajor(lv);
+    s += `<path d="M${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join('L')}Z" fill="none" stroke="currentColor" stroke-width="${major ? 2.6 : 0.9}"/>`;
+    if (major) { const p = pts[(18 + i * 9) % 140]; labels += `<rect x="${p[0] - 21}" y="${p[1] - 9}" width="42" height="18" rx="3" class="sv-paper"/>` + T(p[0], p[1] + 5, F(lv), 'font-size="12" font-weight="700"'); }
+    if (i === k) { let j0 = Math.round(((theta % (2 * Math.PI)) + 2 * Math.PI) / (2 * Math.PI) * 140) % 140, p = pts[j0];
+      for (let tries = 0; tries < 140 && labPos.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 45); tries++) { j0 = (j0 + 7) % 140; p = pts[j0]; } mark = `<path d="M${p[0] - 6},${p[1] - 6}l12,12M${p[0] - 6},${p[1] + 6}l12,-12" class="sv-blue" stroke-width="3"/><text x="${p[0] + 9}" y="${p[1] - 8}" font-size="16" font-weight="700" class="sv-bluet">M</text>`; }
+  });
+  return svg(W, H, s + labels + mark);
+}
+
+// suite de motifs : cells(n) renvoie la liste des carreaux [colonne, ligne] ; cls(n, cell) = classe du carreau
+function patternSVG(cells, steps, cls) {
+  const u = 16; let x = 6, s = '', H = 0;
+  const blocks = steps.map(n => { const cs = cells(n), w = Math.max(...cs.map(c => c[0])) + 1, h = Math.max(...cs.map(c => c[1])) + 1; H = Math.max(H, h); return { n, cs, w, h }; });
+  blocks.forEach(b => {
+    const bw = Math.max(b.w * u, 58), off = (bw - b.w * u) / 2;
+    b.cs.forEach(([cx, cy]) => s += `<rect x="${x + off + cx * u}" y="${8 + (H - b.h + cy) * u}" width="${u}" height="${u}" class="${cls ? cls(b.n, cx, cy) : 'sv-c1'}" stroke="currentColor" stroke-width="1"/>`);
+    s += T(x + bw / 2, H * u + 30, `Étape ${b.n}`, 'font-size="13"'); x += bw + 24;
+  });
+  return svg(x, H * u + 38, s);
+}
+// carré découpé irrégulièrement : regions [{x,y,w,h,on}] dans le carré unité ; grid = [cols, rows] pour la correction
+function subdivSVG(regions, grid) {
+  const S = 170; let s = '';
+  regions.forEach(r => s += `<rect x="${4 + r.x * S}" y="${4 + r.y * S}" width="${r.w * S}" height="${r.h * S}" class="${r.on ? 'sv-c1' : 'sv-paper'}" stroke="currentColor" stroke-width="2"/>`);
+  if (grid) { for (let i = 1; i < grid[0]; i++) s += `<line x1="${4 + i * S / grid[0]}" y1="4" x2="${4 + i * S / grid[0]}" y2="${4 + S}" stroke="currentColor" stroke-width="0.8" stroke-dasharray="4 3"/>`;
+    for (let j = 1; j < grid[1]; j++) s += `<line x1="4" y1="${4 + j * S / grid[1]}" x2="${4 + S}" y2="${4 + j * S / grid[1]}" stroke="currentColor" stroke-width="0.8" stroke-dasharray="4 3"/>`; }
+  return svg(S + 8, S + 8, s);
+}
+// graphique de température : temps[i] à l'heure hours[i]
+function tempGraphSVG(hours, temps, mark) {
+  const x0 = 46, y0 = 14, W = 360, Hh = 210, tmin = -10, tmax = 15, hmax = hours[hours.length - 1];
+  const X = h => x0 + h / hmax * W, Y = t => y0 + (tmax - t) / (tmax - tmin) * Hh;
+  let s = arrowDefs;
+  for (let t = tmin; t <= tmax; t++) s += `<line x1="${x0}" y1="${Y(t)}" x2="${x0 + W}" y2="${Y(t)}" class="sv-grid" stroke-width="${t % 5 ? 0.4 : 1}"/>`;
+  for (let h = 0; h <= hmax; h++) s += `<line x1="${X(h)}" y1="${y0}" x2="${X(h)}" y2="${y0 + Hh}" class="sv-grid" stroke-width="${h % 2 ? 0.4 : 1}"/>`;
+  s += `<line x1="${x0}" y1="${Y(0)}" x2="${x0 + W + 8}" y2="${Y(0)}" stroke="currentColor" stroke-width="1.6" marker-end="url(#ah)"/><line x1="${x0}" y1="${y0 + Hh}" x2="${x0}" y2="${y0 - 6}" stroke="currentColor" stroke-width="1.6" marker-end="url(#ah)"/>`;
+  for (let t = tmin; t <= tmax; t += 5) s += `<text x="${x0 - 5}" y="${Y(t) + 4}" font-size="11" text-anchor="end" fill="currentColor">${F(t)} °C</text>`;
+  for (let h = 0; h <= hmax; h += 2) s += `<text x="${X(h)}" y="${y0 + Hh + 14}" font-size="11" text-anchor="middle" fill="currentColor">${h} h</text>`;
+  s += `<polyline points="${hours.map((h, i) => `${X(h)},${Y(temps[i])}`).join(' ')}" fill="none" class="sv-red" stroke-width="2.4"/>`;
+  (mark || []).forEach(([h, t]) => s += `<path d="M${X(h)},${y0 + Hh} L${X(h)},${Y(t)} L${x0},${Y(t)}" fill="none" class="sv-blue" stroke-width="1.8" stroke-dasharray="5 3"/><circle cx="${X(h)}" cy="${Y(t)}" r="4.5" class="sv-dot"/>`);
+  return svg(x0 + W + 18, y0 + Hh + 22, s);
+}
+// profil de randonnée : alts[i] altitudes successives ; étiquettes de dénivelé sur chaque tronçon
+function profileSVG(alts, showAlts) {
+  const n = alts.length, lo = Math.min(...alts) - 100, hi = Math.max(...alts) + 100, W = 400, H = 170, X = i => 62 + i * (W - 130) / (n - 1), Y = a => 10 + (hi - a) / (hi - lo) * H;
+  let s = `<path d="M${X(0)},${H + 20} ${alts.map((a, i) => `L${X(i)},${Y(a)}`).join(' ')} L${X(n - 1)},${H + 20}Z" class="sv-mount" stroke="none"/>`;
+  s += `<polyline points="${alts.map((a, i) => `${X(i)},${Y(a)}`).join(' ')}" fill="none" stroke="currentColor" stroke-width="2.4"/>`;
+  alts.forEach((a, i) => { s += `<circle cx="${X(i)}" cy="${Y(a)}" r="4" fill="currentColor"/>`; if (i > 0) { const d = a - alts[i - 1]; s += `<rect x="${(X(i) + X(i - 1)) / 2 - 26}" y="${(Y(a) + Y(alts[i - 1])) / 2 - 20}" width="52" height="17" rx="3" class="sv-paper"/>` + T((X(i) + X(i - 1)) / 2, (Y(a) + Y(alts[i - 1])) / 2 - 7, (d > 0 ? '+' : '−') + Math.abs(d) + ' m', `font-size="12" font-weight="700" class="${d > 0 ? 'sv-greent' : 'sv-bluet'}"`); } });
+  s += `<text x="${X(0) - 8}" y="${Y(alts[0]) + 5}" text-anchor="end" font-size="12" font-weight="700" fill="currentColor">départ</text><text x="${X(n - 1) + 8}" y="${Y(alts[n - 1]) + 5}" text-anchor="start" font-size="12" font-weight="700" fill="currentColor">arrivée</text>`;
+  if (showAlts) alts.forEach((a, i) => s += T(X(i), Y(a) + 18, F(a) + ' m', 'font-size="11"'));
+  return svg(W, H + 24, s);
 }
 
 // ================= CALCUL LITTÉRAL =================
@@ -820,17 +934,27 @@ const NOTIONS_CL = [
     { name: 'Associer un calcul avec une lettre à une longueur', gen: () => genSegment(true) },
     {
       name: 'Distributivité avec des nombres', gen: () => {
-        const c = bag('cl-o-dist', 3);
+        const c0 = bag('cl-o-dist', 5);
+        if (c0 <= 1) { // avec des symboles : 5♥ + 3♥ = (5 + 3)♥ = 8♥
+          const sy = P(['♥', '★', '✿', '☀', '♣', '♦', '☂', '♫', '🦋', '🐢']), a = R(2, 9), b = R(1, 9), minus = RS() && a > b, o = minus ? '−' : '+', r = minus ? a - b : a + b;
+          const S = `<span class="sym">${sy}</span>`;
+          if (c0 === 0) return { q: `Complète :<div class="calc">${a} ${S} ${o} ${b} ${S} = ( [[0]] ${o} [[1]] ) ${S} = [[2]] ${S}</div>`, fields: [{ t: 'num', a }, { t: 'num', a: b }, { t: 'num', a: r }],
+            corr: `${a} ${S} ${o} ${b} ${S} = (${a} ${o} ${b}) ${S} = <b>${r} ${S}</b><br><small>${a} ${sy} ${minus ? 'moins' : 'et'} ${b} ${sy}, ça fait ${r} ${sy}.</small>` };
+          const k = P([R(11, 40), P([2.3, 5.3, 8.2, 9.7, 1.7])]), kf = F(k);
+          return { q: `Ici, ${S} remplace le nombre ${kf}. Complète :<div class="calc">${a} × ${kf} ${o} ${b} × ${kf} = ${a} ${S} ${o} ${b} ${S} = [[0]] ${S} = [[1]] × ${kf}</div>`, fields: [{ t: 'num', a: r }, { t: 'num', a: r }],
+            corr: `${a} × ${kf} ${o} ${b} × ${kf}, c'est ${a} ${S} ${o} ${b} ${S} = <b>${r}</b> ${S}, donc <b>${r} × ${kf}</b>.<br><small>${a} fois ${kf} ${minus ? 'moins' : 'et'} ${b} fois ${kf}, ça fait ${r} fois ${kf}.</small>` };
+        }
+        const c = c0 - 2;
         if (c === 0) { // factoriser
           let k, a, b, minus, r;
           do { k = P([R(11, 40), P([2.3, 5.3, 8.2, 9.7, 1.7])]); a = R(3, 15); b = R(2, 9); minus = RS() && a > b; r = minus ? a - b : a + b; } while (r === k || a === k || b === k);
-          const kf = F(k), o = minus ? '−' : '+', form = R(1, 3);
-          const ex = form === 1 ? `${a} × ${kf} ${o} ${b} × ${kf}` : form === 2 ? `${kf} × ${a} ${o} ${kf} × ${b}` : `${kf} × ${a} ${o} ${b} × ${kf}`;
+          const kf = F(k), o = minus ? '−' : '+';
+          const ex = `${a} × ${kf} ${o} ${b} × ${kf}`; // forme naturelle : « 4 crayons et 6 crayons »
           return {
             q: `Factorise : <div class="calc">${ex} = [[0]] × [[1]]</div>`, fields: [{ t: 'num' }, { t: 'num' }], sol: [String(r), F(k)],
             check: v => (Math.abs(v[0] - r) < 1e-9 && Math.abs(v[1] - k) < 1e-9) || (Math.abs(v[1] - r) < 1e-9 && Math.abs(v[0] - k) < 1e-9),
             fieldOk: v => v.map(x => Math.abs(x - r) < 1e-9 || Math.abs(x - k) < 1e-9),
-            corr: `${ex}<br>= (${a} ${o} ${b}) × ${kf}<br>= <b>${r} × ${kf}</b>`
+            corr: `${ex}<br>= (${a} ${o} ${b}) × ${kf}<br>= <b>${r} × ${kf}</b><br><small>${a} fois ${kf} ${minus ? 'moins' : 'et'} ${b} fois ${kf}, ça fait ${r} fois ${kf}.</small>`
           };
         }
         if (c === 1) { // développer, guidé en deux étapes
@@ -940,8 +1064,16 @@ const divisors = n => [...Array(n).keys()].map(i => i + 1).filter(i => n % i ===
 const VOC4 = ['multiple', 'diviseur', 'numérateur', 'dénominateur'];
 const fracF = f => ({ t: 'frac', mode: 'equiv', ...f });
 
-function divisQuestion(N, k) {
+function divisQuestion(N, k, menu) {
   const ok = N % k === 0;
+  if (menu) { // ceinture jaune : l'élève choisit aussi le critère
+    const sum = k === 3 || k === 9, crit = { t: 'sel', o: ['son chiffre des unités', 'la somme de ses chiffres'], a: sum ? 1 : 0 }, val = sum ? digitsSum(N) : N % 10;
+    const regle = { 2: 'se termine par 0, 2, 4, 6 ou 8', 5: 'se termine par 0 ou 5', 10: 'se termine par 0' }[k];
+    return { q: `${F(N)} est-il divisible par ${k} ? Complète la phrase.<div class="phrase">${F(N)} [[0]] divisible par ${k} car [[1]] vaut [[2]]${sum ? ` et ce nombre [[3]] dans la table de ${k}` : ''}.</div>`,
+      fields: [{ t: 'sel', o: ['est', "n'est pas"], a: ok ? 0 : 1 }, crit, { t: 'num', a: val }, ...(sum ? [{ t: 'sel', o: ['est', "n'est pas"], a: val % k === 0 ? 0 : 1 }] : [])],
+      corr: sum ? `Pour ${k}, on regarde <b>la somme des chiffres</b> : ${String(N).split('').join(' + ')} = ${val}.<br>${val} ${val % k === 0 ? 'est' : "n'est pas"} dans la table de ${k}, donc ${F(N)} <b>${ok ? 'est' : "n'est pas"}</b> divisible par ${k}.`
+        : `Pour ${k}, on regarde <b>le chiffre des unités</b> : un nombre est divisible par ${k} s'il ${regle}.<br>${F(N)} se termine par ${val}, donc il <b>${ok ? 'est' : "n'est pas"}</b> divisible par ${k}.` };
+  }
   const verdict = { t: 'sel', o: ['est', "n'est pas"], a: ok ? 0 : 1 };
   if (k === 3 || k === 9) {
     const s = digitsSum(N);
@@ -989,7 +1121,7 @@ const NOTIONS_FR = [
         return { q: `En t'aidant des dessins, écris les deux fractions égales qui sont représentées (partie grise).${fig}<div class="calc">[[0]] = [[1]]</div>`, fields: [{ t: 'frac', mode: 'exact', n, d }, { t: 'frac', mode: 'exact', n: n * k, d: d * k }], corr: `${fracArrowsSVG(n, d, n * k, d * k, '× ' + k)}On a multiplié le numérateur et le dénominateur par ${k}.` };
       }
     },
-    { name: 'Divisibilité par 2, 3, 5, 9 et 10', gen: () => { const k = P([2, 3, 3, 5, 9, 9, 10]); return divisQuestion(randDivisNumber(k, RS()), k); } },
+    { name: 'Divisibilité par 2, 3, 5, 9 et 10', gen: () => { const k = P([2, 3, 3, 5, 9, 9, 10]); return divisQuestion(randDivisNumber(k, RS()), k, true); } },
     {
       name: 'Additionner ou soustraire (même dénominateur)', gen: () => {
         const d = R(3, 12), plus = bag('fr-j-op', 2) === 0; let a, b;
@@ -1533,9 +1665,9 @@ NOTIONS_RE.push([
     name: 'Soustraire deux nombres entiers relatifs', gen: () => {
       let a, b; do { a = nz(-10, 10); b = nz(-10, 10); } while (Math.abs(a - b) > 15 || (b > 0 && RS()));
       const r = a - b, lo = Math.min(a, r) - 2, hi = Math.max(Math.max(a, r) + 2, lo + 10);
-      return { q: `Calcule en ajoutant l'opposé :<div class="calc">${FR(a)} − ${FR(b)} = ${FR(a)} + [[0]] = [[1]]</div><div class="aide">Soustraire un nombre, c'est ajouter son opposé.</div>`,
+      return { q: `Calcule en ajoutant l'opposé :${subLayout(a, b)}<div class="aide">Soustraire un nombre, c'est ajouter son opposé : le − devient +, et on écrit l'opposé en dessous.</div>`,
         fields: [{ t: 'num', a: -b }, { t: 'num', a: r }],
-        corr: `L'opposé de ${FR(b)} est ${FR(-b)}.<br>${FR(a)} − ${FR(b)} = ${FR(a)} + ${FR(-b)} = <b>${FR(r)}</b>${lineSVG(lo, hi, 1, [], { jumps: [[a, r]], dots: [{ v: r, l: '' }], labelStep: hi - lo > 18 ? 2 : 1 })}` };
+        corr: `${subLayout(a, b, true)}L'opposé de ${FR(b)} est ${FR(-b)}.${lineSVG(lo, hi, 1, [], { jumps: [[a, r]], dots: [{ v: r, l: '' }], labelStep: hi - lo > 18 ? 2 : 1 })}` };
     }
   },
   {
@@ -1548,6 +1680,448 @@ NOTIONS_RE.push([
       else if (t === 3) { const p = R(8, 30), d = R(2, p - 1); q = `Un plongeur est à ${F(-p)} m. Il remonte de ${d} m. À quelle altitude est-il maintenant ?<br>[[0]] m`; a = -p + d; calc = `${FR(-p)} + ${d} = ${FR(a)}`; }
       else { const k = R(1, 4), d = R(2, 9); q = `Un ascenseur part du ${k === 1 ? '1er' : k + 'e'} sous-sol (étage ${F(-k)}) et monte de ${d} étages. À quel étage arrive-t-il ?<br>étage [[0]]`; a = -k + d; calc = `${FR(-k)} + ${d} = ${FR(a)}`; }
       return { q: q.replace('<br>', BROUILLON), fields: [{ t: 'num', a }], corr: `${calc}<br>Réponse : <b>${F(a)}</b>` };
+    }
+  },
+]);
+
+// ================= CEINTURES ROUGES =================
+// expression avec lettre en italique, dans un dessin
+const svgExpr = (s, L) => s.split(L).join(iS(L));
+const colTerm = (s, cls) => `<span class="${cls}">${s}</span>`;
+
+// tableau de conversion : on place le nombre (dans l'unité de départ) et on lit dans l'unité d'arrivée
+function convTable(value, from, to, units) {
+  const digits = String(value).split(''), iFrom = units.indexOf(from), iTo = units.indexOf(to), cells = Array(units.length).fill('');
+  digits.slice().reverse().forEach((d, k) => { if (iFrom - k >= 0) cells[iFrom - k] = d; });
+  if (cells[iTo] === '') cells[iTo] = '0';
+  return `<table class="mini conv"><tr>${units.map((u, i) => `<th class="${i === iTo ? 'to' : ''}">${u}</th>`).join('')}</tr><tr>${cells.map((c, i) => `<td class="${i === iTo ? 'to' : ''}">${c}${i === iTo && cells.slice(i + 1).some(x => x !== '') ? '<span class="virg">,</span>' : ''}</td>`).join('')}</tr></table>`;
+}
+const LONG = ['km', 'hm', 'dam', 'm', 'dm', 'cm', 'mm'], MASS = ['kg', 'hg', 'dag', 'g'];
+
+// ---------- CALCUL LITTÉRAL ----------
+NOTIONS_CL.push([
+  {
+    name: 'Périmètre et aire : formule simplifiée', gen: () => {
+      const L = P(LET2), t = bag('cl-rg-geo', 3);
+      if (t === 0) { // polygone irrégulier aux côtés écrits avec des expressions (petits nombres)
+        let sides; do {
+          const p = R(1, 5), k = R(2, 3), q = R(1, 5), r0 = R(2, 6), s0 = R(4, 9), m = 1;
+          sides = [{ c: 1, n: p, txt: `${p} + ${L}` }, { c: k, n: q, txt: `${k}${L} + ${q}` }, { c: 0, n: r0, txt: `${r0}` }, { c: -m, n: s0, txt: `${s0} − ${L}` }];
+        } while (sides.reduce((a, x) => a + x.n, 0) > 20);
+        const C = sides.reduce((a, x) => a + x.c, 0), N = sides.reduce((a, x) => a + x.n, 0);
+        const fig = polySVG([[30, 140], [70, 25], [225, 45], [200, 150]], sides.map(x => svgExpr(x.txt, L)), [0, 0, 0, 0]);
+        const ans = `${C === 1 ? '' : C}${L}+${N}`;
+        const colored = sides.map(x => { const parts = x.txt.split(/ ([+−]) /); if (parts.length === 1) return colTerm(parts[0], /[a-z]/.test(parts[0]) ? 't0' : 't1'); return `(${colTerm(parts[0], /[a-z]/.test(parts[0]) ? 't0' : 't1')} ${parts[1]} ${colTerm(parts[2], /[a-z]/.test(parts[2]) ? 't0' : 't1')})`; }).join(' + ');
+        return { q: `Donne l'expression simplifiée du périmètre de ce quadrilatère (longueurs en mètres).${fig}Périmètre : [[0]] m`, fields: [{ t: 'poly', a: ans, vars: [L], simp: true }],
+          corr: `Périmètre = ${colored}<br>= ${colTerm(`${C === 1 ? '' : C}${L}`, 't0')} + ${colTerm(N, 't1')}<br><small>On regroupe les termes en ${L} (en bleu) et les nombres (en vert).</small>` };
+      }
+      const p = R(1, 5), k = R(2, 5), aire = t === 1;
+      const fig = RS() ? rectSVG(svgExpr(`${L} + ${p}`, L), k, false, aire) : rectSVG(k, svgExpr(`${L} + ${p}`, L), false, aire);
+      if (aire) return { q: `Donne l'expression simplifiée de l'aire de ce rectangle (longueurs en mètres).${fig}Aire : [[0]] m²`, fields: [{ t: 'poly', a: `${k}${L}+${k * p}`, vars: [L], simp: true }],
+        corr: `Aire = ${k} × (${L} + ${p})<br>= ${k} × ${L} + ${k} × ${p}<br>= <b>${k}${L} + ${k * p}</b>` };
+      return { q: `Donne l'expression simplifiée du périmètre de ce rectangle (longueurs en mètres).${fig}Périmètre : [[0]] m`, fields: [{ t: 'poly', a: `2${L}+${2 * p + 2 * k}`, vars: [L], simp: true }],
+        corr: `Périmètre = (${colTerm(L, 't0')} + ${colTerm(p, 't1')}) + ${colTerm(k, 't1')} + (${colTerm(L, 't0')} + ${colTerm(p, 't1')}) + ${colTerm(k, 't1')}<br>= <b>${colTerm('2' + L, 't0')} + ${colTerm(2 * p + 2 * k, 't1')}</b>` };
+    }
+  },
+  {
+    name: 'Distributivité avec des expressions', gen: () => {
+      const L = P(LET2), p = R(1, 9);
+      if (bag('cl-rg-dist', 2) === 0) {
+        const m = R(2, 5), n = R(2, 5), e = `(${L} + ${p})`, E = `(${iL(L)} + ${p})`;
+        const rep = (cnt, cls) => Array(cnt).fill(colTerm(E, cls)).join(' + ');
+        return { q: `Factorise :<div class="calc">${E} × ${m} + ${E} × ${n} = ${E} × [[0]]</div>`, fields: [{ t: 'num', a: m + n }],
+          corr: `${E} × ${m}, c'est ${m} fois ${E}, et ${E} × ${n}, c'est ${n} fois ${E} :<br>${rep(m, 't0')} + ${rep(n, 't1')}<br>En tout, ${m + n} fois ${E} : ${E} × <b>${m + n}</b>` };
+      }
+      const k = R(2, 9), q = R(1, 9);
+      return { q: `Développe puis réduis :<div class="calc">${k} × (${iL(L)} + ${p}) + ${q === 1 ? '' : q}${iL(L)} =</div>[[0]]`, fields: [{ t: 'poly', a: `${k + q}${L}+${k * p}`, vars: [L], simp: true }],
+        corr: `${k} × (${L} + ${p}) + ${q === 1 ? '' : q}${L}<br>= ${colTerm(`${k}${L}`, 't0')} + ${colTerm(k * p, 't1')} + ${colTerm(`${q === 1 ? '' : q}${L}`, 't0')}<br>= <b>${colTerm(`${k + q}${L}`, 't0')} + ${colTerm(k * p, 't1')}</b>` };
+    }
+  },
+  {
+    name: 'Appliquer une formule avec conversion', gen: () => {
+      const t = bag('cl-rg-conv', 4);
+      let q, conv, res, corr;
+      if (t === 0) { const g = R(6, 30) * 100, m = g / 1000, r = rnd6(10 + 50 * m); conv = m; res = r;
+        q = `Le temps de cuisson (en minutes) d'un poulet de masse <i>m</i> (en <b>kilogrammes</b>) est <span class="calc">10 + 50<i>m</i></span>.<br>Combien de temps faut-il cuire un poulet de <b>${F(g)} g</b> ?<div class="calc"><i>m</i> = [[0]] kg</div><div class="calc">Temps de cuisson : [[1]] min</div>`;
+        corr = `${convTable(g, 'g', 'kg', MASS)}${F(g)} g = <b>${F(m)} kg</b><br>10 + 50 × ${F(m)} = 10 + ${F(50 * m)} = <b>${F(r)} min</b>`; }
+      else if (t === 1) { const d = R(10, 90) * 100, k = d / 1000, r = rnd6(300 + 150 * k); conv = k; res = r;
+        q = `Le prix (en francs) d'une course en taxi est <span class="calc">300 + 150<i>d</i></span>, où <i>d</i> est la distance en <b>kilomètres</b>.<br>Combien coûte une course de <b>${F(d)} m</b> ?<div class="calc"><i>d</i> = [[0]] km</div><div class="calc">Prix : [[1]] F</div>`;
+        corr = `${convTable(d, 'm', 'km', LONG)}${F(d)} m = <b>${F(k)} km</b><br>300 + 150 × ${F(k)} = 300 + ${F(150 * k)} = <b>${F(r)} F</b>`; }
+      else if (t === 2) { const mm = R(8, 14) * 20, L = mm / 10, r = (3 * L + 4) / 2; conv = L; res = r;
+        q = `La pointure de chaussure se calcule avec la formule <span class="calc">(3 × <i>L</i> + 4) ÷ 2</span>, où <i>L</i> est la longueur du pied en <b>centimètres</b>.<br>Quelle pointure chausse un pied de <b>${mm} mm</b> ?<div class="calc"><i>L</i> = [[0]] cm</div><div class="calc">Pointure : [[1]]</div>`;
+        corr = `${convTable(mm, 'mm', 'cm', LONG)}${mm} mm = <b>${F(L)} cm</b><br>(3 × ${F(L)} + 4) ÷ 2 = (${F(3 * L)} + 4) ÷ 2 = ${F(3 * L + 4)} ÷ 2 = <b>${F(r)}</b>`; }
+      else { const mm = R(12, 22) * 10, C = mm / 10, r = 4 * C + 20; conv = C; res = r;
+        q = `La longueur de fil (en cm) pour un bracelet brésilien est <span class="calc">4<i>C</i> + 20</span>, où <i>C</i> est le tour du poignet en <b>centimètres</b>.<br>Quelle longueur faut-il pour un poignet de <b>${mm} mm</b> de tour ?<div class="calc"><i>C</i> = [[0]] cm</div><div class="calc">Longueur de fil : [[1]] cm</div>`;
+        corr = `${convTable(mm, 'mm', 'cm', LONG)}${mm} mm = <b>${F(C)} cm</b><br>4 × ${F(C)} + 20 = ${F(4 * C)} + 20 = <b>${F(r)} cm</b>`; }
+      return { q: q + '<div class="aide">Attention aux unités : convertis d’abord, puis applique la formule.</div>', fields: [{ t: 'num', a: conv }, { t: 'num', a: res }], corr };
+    }
+  },
+  {
+    name: 'Résoudre un problème avec une équation', gen: () => {
+      const t = bag('cl-rg-eq', 3);
+      const C = [ // [texte, lettre, inconnue au singulier, au pluriel, prix connu, nombre connu, nom connu, prix inconnu possibles]
+        { L: 'c', one: 'un cookie', many: 'les cookies', known: 'pains', p1: P([100, 150, 200]), u: P([60, 80, 90, 120, 150]), txt: (n1, p1, n2, T0) => `Léo achète ${n1} pains à ${p1} F l'un et ${n2} cookies. Il paie ${F(T0)} F en tout.` },
+        { L: 'j', one: 'une place « jeune »', many: 'les places « jeune »', known: 'places « normal »', p1: 1350, u: P([900, 1000]), txt: (n1, p1, n2, T0) => `Au cinéma, une famille achète ${n1} place${n1 > 1 ? 's' : ''} « normal » à ${F(p1)} F et ${n2} places « jeune ». Elle paie ${F(T0)} F en tout.` },
+        { L: 'g', one: 'une gomme', many: 'les gommes', known: 'stylos', p1: P([100, 150, 200]), u: P([50, 80, 100, 120, 150]), txt: (n1, p1, n2, T0) => `Inès achète ${n1} stylos à ${p1} F l'un et ${n2} gommes identiques. Elle paie ${F(T0)} F en tout.` },
+      ][t];
+      const n1 = t === 1 ? R(1, 2) : R(2, 4), n2 = R(2, 4), K = n1 * C.p1, U = n2 * C.u, T0 = K + U, L = C.L;
+      const pill = `<span class="pill">${n2}<i>${L}</i></span>`;
+      return { q: `${C.txt(n1, C.p1, n2, T0)}<br>On note <i>${L}</i> le prix d’${C.one}. La situation se traduit par l'équation :
+        <div class="steps"><div class="calc">${n1} × ${F(C.p1)} + ${n2}<i>${L}</i> = ${F(T0)}</div><div class="calc">[[0]] + ${pill} = ${F(T0)}</div></div>
+        a) Combien coûtent ${C.many} en tout ?<div class="calc">${pill} = [[1]]</div>
+        Autrement dit : <span class="calc">${n2} × <i>${L}</i> = <span class="echo" data-src="1">…</span></span><br>
+        b) Combien coûte ${C.one} ?<div class="calc"><i>${L}</i> = [[2]] F</div>${BROUILLON}`,
+        fields: [{ t: 'num', a: K }, { t: 'num', a: U }, { t: 'num', a: C.u }],
+        corr: `${n1} × ${F(C.p1)} = ${F(K)}, donc ${F(K)} + ${pill} = ${F(T0)}.<br>a) ${pill} = ${F(T0)} − ${F(K)} = <b>${F(U)} F</b><br>b) ${n2} × <i>${L}</i> = ${F(U)}, donc <i>${L}</i> = ${F(U)} ÷ ${n2} = <b>${F(C.u)} F</b><br><small>Vérification : ${n1} × ${F(C.p1)} + ${n2} × ${F(C.u)} = ${F(T0)}.</small>` };
+    }
+  },
+]);
+
+// ---------- FRACTIONS ----------
+const isPrimeN = n => n > 1 && [...Array(Math.max(0, Math.floor(Math.sqrt(n)) - 1)).keys()].every(i => n % (i + 2));
+const primeFactors = n => { const f = []; let d = 2; while (n > 1) { while (n % d === 0) { f.push(d); n /= d; } d++; } return f; };
+NOTIONS_FR.push([
+  {
+    name: 'Droite graduée : nombre entier + fraction', gen: () => {
+      const d = P([2, 3, 4, 5, 6, 8]), n = R(1, 4), r = R(1, d - 1), k = n * d + r, max = n + 2;
+      const fig = lineSVG(0, max, d, [{ v: k / d, l: 'A' }], {});
+      return { q: `Quelle fraction correspond au repère A ? Écris-la ensuite comme un nombre entier plus une fraction inférieure à 1.${fig}<div class="calc">A = [[0]] = [[1]] + [[2]]</div>`,
+        fields: [{ t: 'frac', mode: 'equiv', n: k, d }, { t: 'num', a: n }, { t: 'frac', mode: 'equiv', n: r, d }],
+        corr: `${lineSVG(0, max, d, [], { dots: [{ v: k / d, l: 'A' }], brace: [0, n, `${n} unité${n > 1 ? 's' : ''}`] })}Chaque unité est partagée en ${d} : A est à ${k} graduations de 0, donc A = ${frac(k, d)}.<br>${frac(k, d)} = ${frac(n * d, d)} + ${frac(r, d)} = <b>${n} + ${frac(r, d)}</b>` };
+    }
+  },
+  {
+    name: 'Décomposer en produit de facteurs premiers', gen: () => {
+      let N; do N = R(12, 100); while (isPrimeN(N) || primeFactors(N).some(p => p > 11) || primeFactors(N).length > 4 || (primeFactors(N).length < 3 && RS()));
+      const f = primeFactors(N); let v = N;
+      const ladder = `<table class="mini ladder">${f.map(p => { const row = `<tr><td>${v}</td><td>${p}</td></tr>`; v /= p; return row; }).join('')}<tr><td>1</td><td></td></tr></table>`;
+      const pow = Object.entries(f.reduce((m, p) => (m[p] = (m[p] || 0) + 1, m), {})).map(([p, e]) => e > 1 ? `${p}${e === 2 ? '²' : e === 3 ? '³' : '^' + e}` : p).join(' × ');
+      const corrF = `On divise par les nombres premiers 2, 3, 5, 7… tant que c'est possible :${ladder}<b>${N} = ${f.join(' × ')}</b>${pow !== f.join(' × ') ? ` = ${pow}` : ''}`;
+      return { q: `Décompose ${N} en produit de facteurs premiers.<div class="calc">${N} = [[0]]</div><div class="aide">Écris les facteurs séparés par ×, par exemple 2 × 2 × 3. Tu peux aussi utiliser ².</div>`,
+        fields: [{ t: 'factors', a: N }], sol: [f.join(' × ')],
+        corrKo: v => { const g = v[0], prod = g.reduce((a, b) => a * b, 1), nonP = [...new Set(g.filter(x => !isPrimeN(x)))];
+          const why = prod !== N ? `Car ${g.join(' × ')} = ${prod}, et pas ${N}.` : `Car ${nonP.join(' et ')} ${nonP.length > 1 ? 'ne sont pas des nombres premiers' : "n'est pas un nombre premier"}${nonP.includes(1) ? ' (1 n’est pas un nombre premier)' : ''}.`;
+          return `<b>${why}</b><br>` + corrF; },
+        corr: `On divise par les nombres premiers 2, 3, 5, 7… tant que c'est possible :${ladder}<b>${N} = ${f.join(' × ')}</b>${pow !== f.join(' × ') ? ` = ${pow}` : ''}` };
+    }
+  },
+  {
+    name: 'Fraction d’une quantité (sans dessin)', gen: () => {
+      let b, q, a, N; do { b = R(2, 10); q = R(3, 15); a = R(1, b - 1); N = b * q; } while (N <= 20 || N > 150);
+      return { q: `Calcule les <span class="calc">${frac(a, b)}</span> de ${N}.${BROUILLON}[[0]]`, fields: [{ t: 'num', a: a * q }],
+        corr: `${barQtySVG(b, a, q, `${a} × ${q} = ${a * q}`)}On partage ${N} en ${b} parts égales : ${N} ÷ ${b} = ${q}.<br>On en prend ${a} : ${a} × ${q} = <b>${a * q}</b>.` };
+    }
+  },
+  {
+    name: 'Calculer la quantité restante', gen: () => {
+      let b, q, a, N; do { b = R(3, 10); q = R(2, 12); a = R(1, b - 1); N = b * q; } while (N <= 20 || N > 120);
+      const ctx = P([
+        [`Dans une classe de ${N} élèves, les ${frac(a, b)} sont demi-pensionnaires. Combien d'élèves ne sont pas demi-pensionnaires ?`, 'élèves', 'demi-pensionnaires'],
+        [`Un réservoir de ${N} litres est rempli aux ${frac(a, b)}. Combien de litres faut-il ajouter pour le remplir ?`, 'L', 'déjà remplis'],
+        [`Un trajet mesure ${N} km. Léa en a déjà parcouru les ${frac(a, b)}. Combien de kilomètres lui reste-t-il ?`, 'km', 'parcourus'],
+        [`Une tablette de chocolat a ${N} carrés. Léo en mange les ${frac(a, b)}. Combien de carrés reste-t-il ?`, 'carrés', 'mangés'],
+      ]);
+      return { q: `${ctx[0]}${BROUILLON}[[0]] ${ctx[1]}`, fields: [{ t: 'num', a: N - a * q }],
+        corr: `${barQtySVG(b, a, q, `${a * q}`, `reste : ${N - a * q}`)}<small>En bleu : ${ctx[2]} (${a * q}) ; en blanc : ce qui reste.</small><br>${N} ÷ ${b} = ${q}, donc les ${frac(a, b)} de ${N} font ${a} × ${q} = ${a * q}.<br>Il reste ${N} − ${a * q} = <b>${N - a * q}</b> ${ctx[1]}.<br><small>Autre méthode : il reste les ${frac(b - a, b)}, soit ${b - a} × ${q} = ${N - a * q}.</small>` };
+    }
+  },
+]);
+
+// soustraction présentée comme dans la leçon : le + sous le −, l'opposé sous le nombre soustrait
+function subLayout(a, b, solved) {
+  const r = rnd6(a - b), cell = s => `<span>${s}</span>`;
+  return `<div class="sublay calc">${cell('')}${cell(FR(a))}${cell('−')}${cell(FR(b))}${cell('=')}${cell(FR(a))}${cell('+')}${cell(solved ? FR(-b) : '[[0]]')}${cell('=')}<span class="span3">${solved ? `<b>${FR(r)}</b>` : '[[1]]'}</span></div>`;
+}
+
+// ---------- NOMBRES RELATIFS ----------
+NOTIONS_RE.push([
+  {
+    name: 'Lire une altitude sur des courbes de niveau', gen: () => {
+      const sea = bag('re-rg-niv', 3) === 2, step = P([20, 20, 25, 50]), per = 100 / step;
+      // de la courbe principale M0 à au moins la suivante (M0 + 100), plus 0 à 2 courbes au-delà
+      const extra = R(0, Math.min(2, per - 1)), n = per + 1 + extra, M0 = sea ? 0 : P([0, 100, 200]);
+      const levels = [...Array(n).keys()].map(i => sea ? M0 - step * i : M0 + step * i), isMajor = v => v % 100 === 0;
+      const k = P([...Array(n).keys()].filter(i => !isMajor(levels[i]))), theta = Math.random() * 6.28;
+      const lv = levels[k], a = sea ? M0 - 100 : M0 + 100, idx = Math.round(Math.abs(lv - M0) / step);
+      return { q: `${sea ? 'Cette carte montre le fond de la mer près d’une côte : la courbe 0 est le bord de l’eau.' : 'Cette carte montre une colline vue du dessus.'} Les altitudes sont en mètres ; seules les courbes en gras sont étiquetées.<br>Quelle est l’altitude du point M ?${contourSVG(levels, k, theta, isMajor)}[[0]] m`,
+        fields: [{ t: 'num', a: lv }],
+        corr: `Entre la courbe ${F(M0)} m et la courbe ${F(a)} m, il y a ${per - 1} courbe${per - 1 > 1 ? 's' : ''} fine${per - 1 > 1 ? 's' : ''}, donc ${per} intervalles : 100 ÷ ${per} = <b>${step} m</b> entre deux courbes voisines.<br>M est sur la ${idx === 1 ? '1re' : idx + 'e'} courbe après ${F(M0)} m, en ${sea ? 'descendant' : 'montant'} : ${F(M0)} ${sea ? '−' : '+'} ${idx} × ${step} = <b>${F(lv)} m</b>${sea ? ` (M est à ${-lv} m de profondeur)` : ''}.` };
+    }
+  },
+  {
+    name: 'Additionner plusieurs nombres relatifs', gen: () => {
+      let v; do v = [...Array(R(4, 5))].map(() => nz(-15, 15)); while (v.filter(x => x > 0).length < 2 || v.filter(x => x < 0).length < 2);
+      const pos = v.filter(x => x > 0), neg = v.filter(x => x < 0), sp = pos.reduce((a, b) => a + b, 0), sn = neg.reduce((a, b) => a + b, 0);
+      return { q: `Calcule en regroupant les nombres de même signe :<div class="steps"><div class="calc">${v.map(FR).join(' + ')}</div><div class="calc">= [[0]] + [[1]]</div><div class="calc">= [[2]]</div></div><div class="aide">D'abord la somme des positifs, puis la somme des négatifs.</div>`,
+        fields: [{ t: 'num', a: sp }, { t: 'num', a: sn }, { t: 'num', a: sp + sn }],
+        corr: `${v.map(FR).join(' + ')}<br>= (${pos.map(FR).join(' + ')}) + (${neg.map(FR).join(' + ')})<br>= ${F(sp)} + ${FR(sn)}<br>= <b>${FR(sp + sn)}</b>` };
+    }
+  },
+  {
+    name: 'Soustraire des nombres décimaux relatifs', gen: () => {
+      const t = bag('re-rg-sous', 3), dec = () => rnd6((RS() ? 1 : -1) * (R(1, 9) + P([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.25, 0.75]))), ent = () => nz(-12, 12);
+      const a = t === 1 ? ent() : dec(), b = t === 2 ? ent() : dec(), r = rnd6(a - b);
+      return { q: `Calcule en ajoutant l'opposé :${subLayout(a, b)}<div class="aide">Soustraire un nombre, c'est ajouter son opposé : le − devient +, et on écrit l'opposé en dessous.</div>`,
+        fields: [{ t: 'num', a: -b }, { t: 'num', a: r }],
+        corr: `${subLayout(a, b, true)}L'opposé de ${FR(b)} est ${FR(-b)}.<br><small>${Math.sign(a) === Math.sign(-b) ? 'Même signe : on additionne les distances à zéro.' : 'Signes différents : on soustrait les distances à zéro, et on garde le signe du nombre le plus éloigné de zéro.'}</small>` };
+    }
+  },
+  {
+    name: 'Problème d’altitude et de dénivelé (+ et −)', gen: () => {
+      const t = bag('re-rg-pb', 4);
+      let q, a, corr;
+      if (t === 0) { const s = R(5, 25) * 50, e = s + nz(-8, 16) * 50; if (e <= 0) return NOTIONS_RE[5][3].gen(); q = `Une randonnée part d’un refuge situé à ${F(s)} m d’altitude et arrive à ${e > s ? 'un sommet' : 'un lac'} situé à ${F(e)} m. Quel est le dénivelé ?<br>[[0]] m`; a = e - s; corr = `Dénivelé = altitude d’arrivée − altitude de départ<br>= ${F(e)} − ${F(s)} = <b>${FR(a)} m</b>${a < 0 ? ' (ça descend)' : ' (ça monte)'}`; }
+      else if (t === 1) { const s = -R(3, 20), e = -R(3, 40); if (s === e) return NOTIONS_RE[5][3].gen(); q = `Un plongeur part de ${F(s)} m et arrive à ${F(e)} m. Quel est le dénivelé ?<br>[[0]] m`; a = e - s; corr = `Dénivelé = arrivée − départ = ${FR(e)} − ${FR(s)} = ${FR(e)} + ${FR(-s)} = <b>${FR(a)} m</b>${a < 0 ? ' (il descend)' : ' (il remonte)'}`; }
+      else if (t === 2) { const e = R(2, 30) * 50, d = nz(-10, 10) * 50, s = e - d; if (s <= 0) return NOTIONS_RE[5][3].gen(); q = `Après un dénivelé de ${FS(d)} m, des randonneurs arrivent à ${F(e)} m d’altitude. À quelle altitude étaient-ils partis ?<br>[[0]] m`; a = s; corr = `Départ + dénivelé = arrivée, donc départ = arrivée − dénivelé<br>= ${F(e)} − ${FR(d)} = <b>${F(s)} m</b>`; }
+      else { const s = -R(5, 30), d1 = -R(2, 15), d2 = R(2, 25); if (s + d1 + d2 >= 0) return NOTIONS_RE[5][3].gen(); q = `Un sous-marin est à ${F(s)} m. Il descend de ${-d1} m, puis remonte de ${d2} m. À quelle altitude est-il ?<br>[[0]] m`; a = s + d1 + d2; corr = `${FR(s)} + ${FR(d1)} + ${d2} = ${FR(s + d1)} + ${d2} = <b>${FR(a)} m</b>`; }
+      return { q: q.replace('<br>', BROUILLON), fields: [{ t: 'num', a }], corr };
+    }
+  },
+]);
+
+// ================= CEINTURES NOIRES =================
+// motifs : cells(n) = carreaux ; parts(n) = { fixe: carreaux constants, groupes: [[carreaux]...] } ; k groupes de n (ou de 2 pour l'escalier)
+const rng = (a, b) => [...Array(b - a + 1).keys()].map(i => a + i);
+const PATTERNS = [
+  { name: 'un L qui grandit', a: 2, b: 1,
+    cells: n => [...rng(0, n).map(r => [0, r]), ...rng(1, n).map(c => [c, n])],
+    parts: n => ({ fixe: [[0, n]], groupes: [rng(0, n - 1).map(r => [0, r]), rng(1, n).map(c => [c, n])] }), form: n => `<b class="cf">1</b> + 2 × <b class="cv">${n}</b>` },
+  { name: 'un L qui grandit plus vite', a: 3, b: 1,
+    cells: n => [...rng(0, n).map(r => [0, r]), ...rng(1, 2 * n).map(c => [c, n])],
+    parts: n => ({ fixe: [[0, n]], groupes: [rng(0, n - 1).map(r => [0, r]), rng(1, n).map(c => [c, n]), rng(n + 1, 2 * n).map(c => [c, n])] }), form: n => `<b class="cf">1</b> + 3 × <b class="cv">${n}</b>` },
+  { name: 'une croix qui grandit', a: 4, b: 1,
+    cells: n => [[n, n], ...rng(0, n - 1).map(c => [c, n]), ...rng(n + 1, 2 * n).map(c => [c, n]), ...rng(0, n - 1).map(r => [n, r]), ...rng(n + 1, 2 * n).map(r => [n, r])],
+    parts: n => ({ fixe: [[n, n]], groupes: [rng(0, n - 1).map(c => [c, n]), rng(n + 1, 2 * n).map(c => [c, n]), rng(0, n - 1).map(r => [n, r]), rng(n + 1, 2 * n).map(r => [n, r])] }), form: n => `<b class="cf">1</b> + 4 × <b class="cv">${n}</b>` },
+  { name: 'un carré bordé', a: 4, b: 4, bord: true,
+    cells: n => { const c = []; for (let x = 0; x < n + 2; x++) for (let y = 0; y < n + 2; y++) if (x === 0 || y === 0 || x === n + 1 || y === n + 1) c.push([x, y]); return c; },
+    parts: n => ({ fixe: [[0, 0], [n + 1, 0], [0, n + 1], [n + 1, n + 1]], groupes: [rng(1, n).map(c => [c, 0]), rng(1, n).map(c => [c, n + 1]), rng(1, n).map(r => [0, r]), rng(1, n).map(r => [n + 1, r])] }), form: n => `<b class="cf">4</b> + 4 × <b class="cv">${n}</b>` },
+  { name: 'un T qui grandit', a: 3, b: 1,
+    cells: n => [[n, 0], ...rng(0, n - 1).map(c => [c, 0]), ...rng(n + 1, 2 * n).map(c => [c, 0]), ...rng(1, n).map(r => [n, r])],
+    parts: n => ({ fixe: [[n, 0]], groupes: [rng(0, n - 1).map(c => [c, 0]), rng(n + 1, 2 * n).map(c => [c, 0]), rng(1, n).map(r => [n, r])] }), form: n => `<b class="cf">1</b> + 3 × <b class="cv">${n}</b>` },
+  { name: 'un escalier qui grandit', a: 2, b: 0, marches: true,
+    cells: n => [].concat(...rng(0, n - 1).map(i => [[i, n - 1 - i], [i, n - i]])),
+    parts: n => ({ fixe: [], groupes: rng(0, n - 1).map(i => [[i, n - 1 - i], [i, n - i]]) }), form: n => `<b class="cv">${n}</b> × 2` },
+];
+// correction imagée : groupes entourés en jaune (taille en orange), carreaux fixes en bleu, formule sous chaque étape
+function patternCorrSVG(pt, steps) {
+  const u = 18; let x = 14, s = '', H = 0, blocks = steps.map(n => { const cs = pt.cells(n); return { n, cs, w: Math.max(...cs.map(c => c[0])) + 1, h: Math.max(...cs.map(c => c[1])) + 1 }; });
+  H = Math.max(...blocks.map(b => b.h));
+  blocks.forEach(b => {
+    const bw = Math.max(b.w * u + 30, 90), off = (bw - b.w * u) / 2 + x, oy = 22 + (H - b.h) * u, P0 = pt.parts(b.n), isF = (c, r) => P0.fixe.some(f => f[0] === c && f[1] === r);
+    b.cs.forEach(([c, r]) => s += `<rect x="${off + c * u}" y="${oy + r * u}" width="${u}" height="${u}" class="${isF(c, r) ? 'sv-c1' : 'sv-shade'}" stroke="currentColor" stroke-width="1"/>`);
+    P0.groupes.forEach(gr => { const xs = gr.map(c => c[0]), ys = gr.map(c => c[1]), gx = off + Math.min(...xs) * u - 3, gy = oy + Math.min(...ys) * u - 3, gw = (Math.max(...xs) - Math.min(...xs) + 1) * u + 6, gh = (Math.max(...ys) - Math.min(...ys) + 1) * u + 6;
+      s += `<rect x="${gx}" y="${gy}" width="${gw}" height="${gh}" rx="6" class="sv-grp"/>`;
+      const lab = pt.marches ? '' : String(b.n), horiz = gw > gh || (gw === gh && b.n === 1), fcx = off + b.w * u / 2, fcy = oy + b.h * u / 2;
+      const gcx = gx + gw / 2, gcy = gy + gh / 2, eps = u / 2; let lx, ly;
+      const atL = Math.min(...xs) === 0, atR = Math.max(...xs) === b.w - 1, atT = Math.min(...ys) === 0, atB = Math.max(...ys) === b.h - 1; // le groupe touche-t-il un bord ?
+      if (horiz) { if (gcx < fcx - eps && atL && !atB && !atT) { lx = gx - 9; ly = gcy + 5; } else if (gcx > fcx + eps && atR && !atB && !atT) { lx = gx + gw + 9; ly = gcy + 5; } else { lx = gcx; ly = gcy <= fcy ? gy - 5 : gy + gh + 15; } }
+      else { if (gcy < fcy - eps && atT && !atL && !atR) { lx = gcx; ly = gy - 5; } else if (gcy > fcy + eps && atB && !atL && !atR) { lx = gcx; ly = gy + gh + 15; } else { lx = gcx <= fcx ? gx - 9 : gx + gw + 9; ly = gcy + 5; } }
+      if (lab) s += `<text x="${lx}" y="${ly}" text-anchor="middle" font-size="14" font-weight="700" class="sv-cvt">${lab}</text>`; });
+    s += `<foreignObject x="${x}" y="${oy + b.h * u + 20}" width="${bw}" height="44"><div xmlns="http://www.w3.org/1999/xhtml" class="patlab">Étape ${b.n}<br>${pt.form(b.n)}</div></foreignObject>`;
+    x += bw + 26;
+  });
+  return svg(x, H * u + 90, s);
+}
+
+// ---------- CALCUL LITTÉRAL ----------
+NOTIONS_CL.push([
+  {
+    name: 'Trouver une formule à partir d’un motif', gen: () => {
+      const pt = PATTERNS[bag('cl-nr-mot', PATTERNS.length)], cnt = n => pt.a * n + pt.b, K = R(4, 5);
+      const fig = patternSVG(pt.cells, [1, 2, 3], pt.bord ? () => 'sv-shade' : null);
+      const f = `${pt.a}n${pt.b ? '+' + pt.b : ''}`, fn = pt.form('n').replace('<b class="cv">n</b>', '<b class="cv"><i>n</i></b>');
+      return { q: `Voici ${pt.name}${pt.bord ? ' (on compte les carreaux gris)' : ''} :${fig}a) Combien de carreaux y aura-t-il à l'étape ${K} ? [[0]]<br>b) Écris une formule qui donne le nombre de carreaux à l'étape <i>n</i> : [[1]]`,
+        fields: [{ t: 'num', a: cnt(K) }, { t: 'poly', a: f, vars: ['n'] }],
+        corr: `${patternCorrSVG(pt, [2, 3])}${pt.marches ? 'Chaque marche a 2 carreaux, et il y a autant de marches que le numéro de l’étape.' : `En <span class="cf">bleu</span>, les carreaux qui ne changent pas ; en <span class="cv">orange</span>, la longueur de chaque groupe jaune, qui est le numéro de l’étape.`}<br>Étape ${K} : ${pt.form(K)} = <b>${cnt(K)}</b><br>Étape <i>n</i> : ${fn} = <b>${pt.a}<i>n</i>${pt.b ? ' + ' + pt.b : ''}</b>` };
+    }
+  },
+  {
+    name: 'Égalité vraie ? Contre-exemple', gen: () => {
+      if (bag('cl-nr-eg', 2) === 0) {
+        const L = P(LET2); let a, b, c, d, v, ok;
+        do { a = R(2, 6); c = R(2, 7); v = R(2, 6); ok = RS(); b = R(1, 12); d = a * v + b - c * v + (ok ? 0 : P([-2, -1, 1, 2])); } while (a === c || d === 0 || Math.abs(d) > 20);
+        const right = d > 0 ? `${c}${L} + ${d}` : `${c}${L} − ${-d}`, lv = a * v + b, rv = c * v + d;
+        return { q: `L'égalité <span class="calc">${a}${iL(L)} + ${b} = ${right.replace(L, iL(L))}</span> est-elle vraie pour <i>${L}</i> = ${v} ?<div class="calc">Membre de gauche : [[0]] &nbsp; Membre de droite : [[1]]</div>`,
+          fields: [{ t: 'num', a: lv }, { t: 'num', a: rv }, { t: 'choice', o: ['Oui, elle est vraie', 'Non, elle est fausse'], a: lv === rv ? 0 : 1 }],
+          corr: `Gauche : ${a} × ${v} + ${b} = ${a * v} + ${b} = <b>${lv}</b><br>Droite : ${c} × ${v} ${d > 0 ? '+ ' + d : '− ' + -d} = ${c * v} ${d > 0 ? '+ ' + d : '− ' + -d} = <b>${rv}</b><br>${lv === rv ? `Les deux membres sont égaux : l'égalité est <b>vraie</b> pour ${L} = ${v}.` : `${lv} ≠ ${rv} : l'égalité est <b>fausse</b> pour ${L} = ${v}.`}` };
+      }
+      const C = P([
+        { s: 'Tom affirme : « Pour tout nombre entier <i>n</i>, <i>n</i> + 5 est plus grand que 2<i>n</i>. »', ok: n => n + 5 > 2 * n, show: n => `${n} + 5 = ${n + 5} et 2 × ${n} = ${2 * n}` },
+        { s: 'Léa affirme : « Pour tout nombre entier <i>n</i>, 3<i>n</i> + 1 est un nombre impair. »', ok: n => (3 * n + 1) % 2 === 1, show: n => `3 × ${n} + 1 = ${3 * n + 1}, qui est pair` },
+        { s: 'Hugo affirme : « Pour tout nombre entier <i>n</i>, 2<i>n</i> + 1 est un nombre premier. »', ok: n => isPrimeN(2 * n + 1), show: n => `2 × ${n} + 1 = ${2 * n + 1} = ${primeFactors(2 * n + 1).join(' × ')}, qui n'est pas premier` },
+        { s: 'Nina affirme : « Pour tout nombre entier <i>n</i>, <i>n</i>² est strictement plus grand que <i>n</i>. »', ok: n => n * n > n, show: n => `${n}² = ${n * n}, qui n'est pas strictement plus grand que ${n}` },
+      ]);
+      let opts; do opts = SH([...Array(9).keys()].map(i => i + 1)).slice(0, 4); while (opts.filter(n => !C.ok(n)).length !== 1);
+      const bad = opts.find(n => !C.ok(n));
+      return { q: `${C.s}<br>Elle ou il se trompe. Quel nombre est un <b>contre-exemple</b> ?`, fields: [{ t: 'choice', o: opts.map(n => `<i>n</i> = ${n}`), a: opts.indexOf(bad) }],
+        corr: `Pour <i>n</i> = ${bad} : ${C.show(bad)}. L'affirmation est fausse pour ce nombre : <b><i>n</i> = ${bad}</b> est un contre-exemple.<br><small>Un seul contre-exemple suffit pour prouver qu'une affirmation est fausse.</small>` };
+    }
+  },
+  {
+    name: 'Écrire et prouver avec un nombre entier n', gen: () => {
+      const t = bag('cl-nr-n', 3);
+      if (t === 2) return { q: `On veut prouver que la somme de trois nombres entiers consécutifs est toujours un multiple de 3. On note <i>n</i> le premier nombre.<div class="steps"><div class="calc"><i>n</i> + (<i>n</i> + 1) + (<i>n</i> + 2) = [[0]]<i>n</i> + [[1]]</div><div class="calc">= 3 × (<i>n</i> + [[2]])</div></div>`,
+        fields: [{ t: 'num', a: 3 }, { t: 'num', a: 3 }, { t: 'num', a: 1 }], corr: `<i>n</i> + (<i>n</i> + 1) + (<i>n</i> + 2) = 3<i>n</i> + 3 = 3 × (<i>n</i> + 1).<br>C'est 3 fois un nombre entier : <b>c'est un multiple de 3</b>.` };
+      const k = R(2, 9), m = R(2, 5);
+      const W = P([[`un multiple de ${k}`, `${k}n`, `${k} × <i>n</i>`], [`le double de <i>n</i> augmenté de ${k}`, `2n+${k}`, `2<i>n</i> + ${k}`], [`le triple de <i>n</i> diminué de ${k}`, `3n-${k}`, `3<i>n</i> − ${k}`],
+        [`la somme de <i>n</i> et de ${k}`, `n+${k}`, `<i>n</i> + ${k}`], [`le produit de <i>n</i> par ${k}`, `${k}n`, `${k}<i>n</i>`], [`<i>n</i> augmenté de ${k}, le tout multiplié par ${m}`, `${m}n+${k * m}`, `(<i>n</i> + ${k}) × ${m} = ${m}<i>n</i> + ${k * m}`],
+        ['un multiple de 5', '5n', '5 × <i>n</i>'], ['le nombre entier qui suit <i>n</i>', 'n+1', '<i>n</i> + 1'], ['le nombre entier qui précède <i>n</i>', 'n-1', '<i>n</i> − 1'], ['le double de <i>n</i>', '2n', '2<i>n</i>'], ['le triple de <i>n</i>', '3n', '3<i>n</i>'],
+        ['la somme de <i>n</i> et du nombre qui le suit', '2n+1', '<i>n</i> + (<i>n</i> + 1) = 2<i>n</i> + 1'], ['le carré de <i>n</i>', 'n^2', '<i>n</i>²'], ['le double du nombre qui suit <i>n</i>', '2n+2', '2 × (<i>n</i> + 1) = 2<i>n</i> + 2'], ['un nombre pair', '2n', '2 × <i>n</i> (le double d’un entier est pair)']]);
+      return { q: `<i>n</i> est un nombre entier. Écris en fonction de <i>n</i> : ${W[0]}.<br>[[0]]`, fields: [{ t: 'poly', a: W[1], vars: ['n'] }], corr: `<b>${W[2]}</b>` };
+    }
+  },
+  {
+    name: 'Programme de calcul avec une lettre, à simplifier', gen: () => {
+      const a = R(2, 9), b = R(2, 5), c = R(1, b - 1), sub = bag('cl-nr-pg', 2) === 0;
+      const steps = sub ? [`Ajouter ${a}`, `Multiplier par ${b}`, `Soustraire ${c === 1 ? 'le' : c + ' fois le'} nombre de départ`] : [`Multiplier par ${b}`, `Ajouter ${a}`, `Ajouter ${c === 1 ? 'le' : c + ' fois le'} nombre de départ`];
+      const box = `<div class="prog"><div>Choisir un nombre <i>n</i></div>${steps.map(s => `<div>${s}</div>`).join('')}</div>`;
+      const s1 = sub ? `n+${a}` : `${b}n`, s2 = sub ? `${b}n+${a * b}` : `${b}n+${a}`, fin = sub ? `${b - c === 1 ? '' : b - c}n+${a * b}` : `${b + c}n+${a}`;
+      const sh = s => s.replace(/n/g, '<i>n</i>').replace(/\+/g, ' + ');
+      return { q: `Voici un programme de calcul :${box}Complète chaque étape avec une expression simplifiée :<div class="steps"><div class="calc">• <i>n</i></div><div class="calc">• [[0]]</div><div class="calc">• [[1]]</div><div class="calc">• [[2]]</div></div>`,
+        fields: [{ t: 'poly', a: s1, vars: ['n'], simp: true }, { t: 'poly', a: s2, vars: ['n'], simp: true }, { t: 'poly', a: fin, vars: ['n'], simp: true }], retrySimp: true,
+        corr: sub ? `• <i>n</i><br>• <i>n</i> + ${a}<br>• (<i>n</i> + ${a}) × ${b} = <b>${sh(s2)}</b><br>• ${sh(s2)} − ${c === 1 ? '' : c}<i>n</i> = <b>${sh(fin)}</b>`
+          : `• <i>n</i><br>• <i>n</i> × ${b} = <b>${b}<i>n</i></b><br>• <b>${sh(s2)}</b><br>• ${sh(s2)} + ${c === 1 ? '' : c}<i>n</i> = <b>${sh(fin)}</b>` };
+    }
+  },
+]);
+
+// ---------- FRACTIONS ----------
+function randomSubdiv() {
+  for (let essai = 0; essai < 100; essai++) {
+    let regs = [{ x: 0, y: 0, w: 1, h: 1 }]; const nsp = R(3, 4);
+    for (let s = 0; s < nsp; s++) {
+      const cand = regs.filter(r => r.w >= 0.25 && r.h >= 0.25 && (r.w > 0.25 || r.h > 0.25)); if (!cand.length) break;
+      const r = P(cand), vert = r.w > r.h ? true : r.h > r.w ? false : RS(); regs = regs.filter(x => x !== r);
+      regs.push(vert ? { x: r.x, y: r.y, w: r.w / 2, h: r.h } : { x: r.x, y: r.y, w: r.w, h: r.h / 2 }, vert ? { x: r.x + r.w / 2, y: r.y, w: r.w / 2, h: r.h } : { x: r.x, y: r.y + r.h / 2, w: r.w, h: r.h / 2 });
+    }
+    const cols = Math.round(1 / Math.min(...regs.map(r => r.w))), rows = Math.round(1 / Math.min(...regs.map(r => r.h)));
+    if (cols * rows > 16 || regs.length < 4) continue;
+    const on = SH(regs).slice(0, R(1, Math.min(3, regs.length - 1))); on.forEach(r => r.on = true);
+    const D = cols * rows, k = Math.round(on.reduce((a, r) => a + r.w * r.h, 0) * D);
+    if (k === D) continue;
+    return { regs, cols, rows, D, k };
+  }
+  return randomSubdiv();
+}
+NOTIONS_FR.push([
+  {
+    name: 'Fraction d’une figure découpée irrégulièrement', gen: () => {
+      const { regs, cols, rows, D, k } = randomSubdiv(), g = gcd(k, D);
+      return { q: `Quelle fraction du carré est coloriée ?${subdivSVG(regs)}[[0]]`, fields: [{ t: 'frac', mode: 'equiv', n: k, d: D }],
+        corr: `${subdivSVG(regs, [cols, rows])}On découpe tout le carré en ${D} petites parts égales (pointillés). La partie coloriée en contient ${k} : ${frac(k, D)}${g > 1 ? ` = <b>${frac(k / g, D / g)}</b>` : ''}.` };
+    }
+  },
+  {
+    name: 'Rendre une fraction irréductible avec les facteurs premiers', gen: () => {
+      let N, D, g; do { const base = [2, 2, 3, 3, 5, 7]; const common = SH(base).slice(0, R(1, 2)), a = P([2, 3, 5, 7, 11]), b = P([2, 3, 5, 7, 11]); g = common.reduce((x, y) => x * y, 1); N = g * a; D = g * b; } while (N === D || N > 100 || D > 100 || gcd(N / gcd(N, D), D / gcd(N, D)) !== 1 || gcd(N, D) < 4 || N > D && RS());
+      const fN = primeFactors(N), fD = primeFactors(D), G = gcd(N, D), common = primeFactors(G);
+      const mark = (f) => { const rest = common.slice(); return f.map(p => { const i = rest.indexOf(p); if (i >= 0) { rest.splice(i, 1); return `<span class="barre">${p}</span>`; } return p; }).join(' × '); };
+      return { q: `Rends la fraction <span class="calc">${frac(N, D)}</span> irréductible en décomposant d'abord en facteurs premiers.<div class="calc">${N} = [[0]]</div><div class="calc">${D} = [[1]]</div><div class="calc">${frac(N, D)} = [[2]]</div>`,
+        fields: [{ t: 'factors', a: N }, { t: 'factors', a: D }, { t: 'frac', mode: 'irred', n: N / G, d: D / G }], sol: [fN.join(' × '), fD.join(' × '), [String(N / G), String(D / G)]],
+        corr: `${frac(N, D)} = ${frac(mark(fN), mark(fD))} = <b>${frac(N / G, D / G)}</b><br><small>On barre les facteurs communs (${common.join(' × ')} = ${G}). Il ne reste plus de facteur commun : la fraction est irréductible.</small>` };
+    }
+  },
+  {
+    name: 'Additionner et soustraire des fractions (tous dénominateurs)', gen: () => {
+      if (bag('fr-nr-add', 2) === 0) { // deux fractions, dénominateurs quelconques
+        let b, d, a, c, plus; do { b = R(2, 7); d = R(2, 7); a = R(1, b - 1); c = R(1, d - 1); plus = RS(); } while (b === d || b % d === 0 || d % b === 0 || b * d / gcd(b, d) > 30 || (!plus && a * d <= c * b));
+        const op = plus ? '+' : '−', lcm = b * d / gcd(b, d);
+        return {
+          pre: { q: `On veut calculer <span class="calc">${frac(a, b)} ${op} ${frac(c, d)}</span>.<div class="phrase">Quel nombre est à la fois un multiple de ${b} et un multiple de ${d} ?</div>[[0]]`, field: { t: 'num' }, sol: String(lcm),
+            valid: v => !Number.isInteger(v) || v <= 0 ? 'Écris un nombre entier positif.' : v > 300 ? 'Choisis un multiple commun plus petit.' : (v % b || v % d) ? `${F(v)} n'est pas à la fois un multiple de ${b} et de ${d}. Réessaie : cherche dans la table de ${Math.max(b, d)}.` : null },
+          then: D => ({ q: `Dénominateur commun choisi : ${D}.<div class="calc">${frac(a, b)} ${op} ${frac(c, d)} = ${frac('[[0]]', D)} ${op} ${frac('[[1]]', D)} = [[2]]</div>`,
+            fields: [{ t: 'num', a: a * D / b }, { t: 'num', a: c * D / d }, { t: 'frac', mode: 'equiv', n: plus ? a * D / b + c * D / d : a * D / b - c * D / d, d: D }],
+            corr: `<div class="pair">${fracArrowsSVG(a, b, a * D / b, D, '× ' + D / b)}${fracArrowsSVG(c, d, c * D / d, D, '× ' + D / d)}</div>${frac(a * D / b, D)} ${op} ${frac(c * D / d, D)} = <b>${frac(plus ? a * D / b + c * D / d : a * D / b - c * D / d, D)}</b>` })
+        };
+      }
+      const S = P([[2, 3, 6], [2, 4, 8], [3, 6, 12], [2, 5, 10], [4, 8, 16], [3, 9, 18], [2, 6, 12], [5, 10, 20]]); const D = S[2];
+      const nums = S.map(d => R(1, d - 1)), conv = nums.map((n, i) => n * D / S[i]), tot = conv.reduce((a, b) => a + b, 0);
+      return { q: `Calcule :<div class="steps"><div class="calc">${S.map((d, i) => frac(nums[i], d)).join(' + ')}</div><div class="calc">= ${frac('[[0]]', D)} + ${frac('[[1]]', D)} + ${frac('[[2]]', D)}</div><div class="calc">= [[3]]</div></div><div class="aide">Mets d'abord les trois fractions sur ${D}.</div>`,
+        fields: [{ t: 'num', a: conv[0] }, { t: 'num', a: conv[1] }, { t: 'num', a: conv[2] }, { t: 'frac', mode: 'equiv', n: tot, d: D }],
+        corr: `${S.map((d, i) => frac(nums[i], d)).join(' + ')}<br>= ${conv.map(c => frac(c, D)).join(' + ')}<br>= <b>${frac(tot, D)}</b><br><small>${S.map((d, i) => d === D ? `${frac(nums[i], d)} est déjà sur ${D}` : `${frac(nums[i], d)} : × ${D / d}`).join(' ; ')}</small>` };
+    }
+  },
+  {
+    name: 'Fractions et pourcentages', gen: () => {
+      const t = bag('fr-nr-pct', 3);
+      if (t === 0) { const d = P([2, 4, 5, 10, 20, 25, 50]), n = R(1, d - 1), k = 100 / d; return { q: `Complète : <span class="calc">${frac(n, d)} = [[0]] %</span>`, fields: [{ t: 'num', a: n * k }], corr: `${fracArrowsSVG(n, d, n * k, 100, '× ' + k)}${frac(n, d)} = ${frac(n * k, 100)} = <b>${n * k} %</b>` }; }
+      if (t === 1) { const d0 = P([4, 5, 10, 20, 25]), n0 = R(1, d0 - 1), m = R(2, 6), N = n0 * m, Dd = d0 * m, p = n0 * 100 / d0;
+        const ctx = P([`${N} élèves sur ${Dd} ont choisi le foot.`, `${N} billes sur ${Dd} sont rouges.`, `Léa a réussi ${N} questions sur ${Dd}.`]);
+        return { q: `${ctx}<br>Quel pourcentage cela représente-t-il ?<br>[[0]] %${BROUILLON}`, fields: [{ t: 'num', a: p }], corr: `${frac(N, Dd)} = ${frac(n0, d0)} (on simplifie par ${m})${fracArrowsSVG(n0, d0, p, 100, '× ' + 100 / d0)}<b>${p} %</b>` }; }
+      const p = P([10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 5, 15, 35, 45]), g = gcd(p, 100);
+      return { q: `Écris sous forme de fraction irréductible : <span class="calc">${p} % =</span> [[0]]`, fields: [{ t: 'frac', mode: 'irred', n: p / g, d: 100 / g }],
+        corr: `${p} % = ${frac(p, 100)}${fracArrowsSVG(p, 100, p / g, 100 / g, ': ' + g)}<b>${p} % = ${frac(p / g, 100 / g)}</b>` };
+    }
+  },
+]);
+
+// ---------- NOMBRES RELATIFS ----------
+NOTIONS_RE.push([
+  {
+    name: 'Repères à grandes graduations et graphiques', gen: () => {
+      const t = bag('re-nr-rep', 4);
+      if (t === 0) { // droite graduée : deviner la valeur d'une petite graduation
+        let M, s; do { M = P([10, 20, 50, 100, 200]); s = P([2, 4, 5, 10]); } while (![1, 2, 5, 10, 20, 25, 50].includes(M / s)); const mi = M / s, L0 = M * R(-2, 0), k = R(1, 2 * s - 1);
+        const v = L0 + k * mi; if (k % s === 0) return NOTIONS_RE[6][0].gen();
+        const W = 380, X = x => 20 + (x - L0) / (2 * M) * (W - 40); let sv = arrowDefs + `<line x1="12" y1="50" x2="${W - 4}" y2="50" stroke="currentColor" stroke-width="1.6" marker-end="url(#ah)"/>`;
+        for (let i = 0; i <= 2 * s; i++) { const x = X(L0 + i * mi), maj = i % s === 0; sv += `<line x1="${x}" y1="${maj ? 41 : 45}" x2="${x}" y2="${maj ? 59 : 55}" stroke="currentColor" stroke-width="${maj ? 2 : 1}"/>`; if (maj) sv += T(x, 76, F(L0 + i * mi), 'font-size="13"'); }
+        sv += `<path d="M${X(v)},40 l-9,-12 a11,11 0 1,1 18,0 z" class="sv-pin"/>` + T(X(v), 26, 'A', 'font-size="13" font-weight="700" class="sv-pintext"');
+        return { q: `Quelle est l'abscisse du point A ?${svg(W, 86, sv)}<div class="calc">Une petite graduation vaut [[0]]</div><div class="calc">A a pour abscisse [[1]]</div>`, fields: [{ t: 'num', a: mi }, { t: 'num', a: v }],
+          corr: `Entre ${F(L0)} et ${F(L0 + M)}, il y a ${s} intervalles : ${F(M)} ÷ ${s} = <b>${F(mi)}</b>.<br>A est à ${k} petites graduations de ${F(L0)} : ${F(L0)} + ${k} × ${F(mi)} = <b>${F(v)}</b>.` };
+      }
+      if (t === 1) { // graphique de température
+        const hours = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]; let temps;
+        for (; ;) { const tmin = R(-8, 2), tmax = tmin + R(8, 14), ih = R(5, 8); temps = hours.map((h, i) => Math.round(i <= ih ? tmin + (tmax - tmin) * Math.max(0, i - 3) / (ih - 3) : tmax - (tmax - tmin) * 0.6 * (i - ih) / (12 - ih))); temps[0] = temps[1] + R(0, 2); temps[2] = temps[3] + R(0, 1); if (Math.max(...temps) <= 15 && Math.min(...temps) >= -10 && temps.some(x => x < 0)) break; }
+        if (RS()) { const i = R(1, 11); return { q: `Ce graphique montre l'évolution de la température au cours d'une journée d'hiver.<br>Quelle température faisait-il à ${hours[i]} h ?${tempGraphSVG(hours, temps)}[[0]] °C`, fields: [{ t: 'num', a: temps[i] }], corr: `${tempGraphSVG(hours, temps, [[hours[i], temps[i]]])}On part de ${hours[i]} h sur l'axe horizontal, on monte jusqu'à la courbe, puis on lit sur l'axe vertical : <b>${F(temps[i])} °C</b>.` }; }
+        const cand = temps.map((v, i) => i).filter(i => { const v = temps[i]; let cross = 0; for (let j = 0; j < 12; j++) { const a = temps[j] - v, b = temps[j + 1] - v; if (a === 0 && b === 0) cross += 9; else if (a * b < 0) cross++; } return temps.filter(x => x === v).length === 1 && cross === 0; });
+        if (!cand.length) return NOTIONS_RE[6][0].gen();
+        const i = P(cand);
+        return { q: `Ce graphique montre l'évolution de la température au cours d'une journée d'hiver.<br>À quelle heure la température était-elle de ${F(temps[i])} °C ?${tempGraphSVG(hours, temps)}[[0]] h`, fields: [{ t: 'num', a: hours[i] }], corr: `${tempGraphSVG(hours, temps, [[hours[i], temps[i]]])}On part de ${F(temps[i])} °C sur l'axe vertical, on va jusqu'à la courbe, puis on descend sur l'axe des heures : <b>${hours[i]} h</b>.` };
+      }
+      // repère à grandes graduations : abscisse, ordonnée, coordonnées
+      let step, sub; do { step = P([10, 20, 50, 100]); sub = P([2, 4, 5]); } while (![2, 5, 10, 20, 25].includes(step / sub)); const u = step / sub; let x, y;
+      do { x = R(-2 * sub, 2 * sub) * u; y = R(-2 * sub, 2 * sub) * u; } while (x === y || x === -y || x === 0 || y === 0 || (x % step === 0 && y % step === 0));
+      const fig = gridXY([-2 * step, 2 * step], [-2 * step, 2 * step], step, sub, [{ x, y, l: 'A' }]);
+      const kind = t === 2 ? P(['x', 'y', 'xy']) : 'phrase';
+      if (kind === 'phrase') { const which = P([0, 1, 2]), shown = which === 0 ? F(x) : which === 1 ? F(y) : `(${F(x)} ; ${F(y)})`;
+        return { q: `Complète la phrase.${fig}<div class="phrase">${shown} [[0]] du point A.</div>`, fields: [{ t: 'sel', o: ["est l'abscisse", "est l'ordonnée", 'sont les coordonnées'], a: which }],
+          corr: `A a pour abscisse ${F(x)} (axe horizontal) et pour ordonnée ${F(y)} (axe vertical) : <b>${shown} ${["est l'abscisse", "est l'ordonnée", 'sont les coordonnées'][which]}</b> du point A.<br><small>Un petit carreau vaut ${F(u)}.</small>` }; }
+      if (kind === 'x') return { q: `Quelle est l'<b>abscisse</b> du point A ?${fig}[[0]]`, fields: [{ t: 'num', a: x }], corr: `Un petit carreau vaut ${F(step)} ÷ ${sub} = ${F(u)}. L'abscisse se lit sur l'axe horizontal : <b>${F(x)}</b>.` };
+      if (kind === 'y') return { q: `Quelle est l'<b>ordonnée</b> du point A ?${fig}[[0]]`, fields: [{ t: 'num', a: y }], corr: `Un petit carreau vaut ${F(step)} ÷ ${sub} = ${F(u)}. L'ordonnée se lit sur l'axe vertical : <b>${F(y)}</b>.` };
+      return { q: `Quelles sont les coordonnées du point A ?${fig}<div class="calc">A ( [[0]] ; [[1]] )</div>`, fields: [{ t: 'num', a: x }, { t: 'num', a: y }], corr: `Un petit carreau vaut ${F(step)} ÷ ${sub} = ${F(u)}.<br><b>A (${F(x)} ; ${F(y)})</b> : d'abord l'abscisse, puis l'ordonnée.` };
+    }
+  },
+  {
+    name: 'Additions et soustractions à trou', gen: () => {
+      const t = bag('re-nr-trou', 4); let a, b, c; do { a = nz(-10, 10); b = nz(-10, 10); } while (Math.abs(a + b) > 12 || Math.abs(a - b) > 12);
+      let q, ans, how, chk;
+      if (t === 0) { c = a + b; q = `${FR(a)} + [[0]] = ${FR(c)}`; ans = b; how = `On cherche ce qu'il faut ajouter à ${FR(a)} pour obtenir ${FR(c)} : ${FR(c)} − ${FR(a)} = ${FR(b)}`; chk = `${FR(a)} + ${FR(b)} = ${FR(c)}`; }
+      else if (t === 1) { c = a + b; q = `[[0]] + ${FR(b)} = ${FR(c)}`; ans = a; how = `On cherche le nombre auquel on ajoute ${FR(b)} pour obtenir ${FR(c)} : ${FR(c)} − ${FR(b)} = ${FR(a)}`; chk = `${FR(a)} + ${FR(b)} = ${FR(c)}`; }
+      else if (t === 2) { c = a - b; q = `${FR(a)} − [[0]] = ${FR(c)}`; ans = b; how = `On cherche ce qu'il faut enlever à ${FR(a)} pour obtenir ${FR(c)} : ${FR(a)} − ${FR(c)} = ${FR(b)}`; chk = `${FR(a)} − ${FR(b)} = ${FR(a)} + ${FR(-b)} = ${FR(c)}`; }
+      else { c = a - b; q = `[[0]] − ${FR(b)} = ${FR(c)}`; ans = a; how = `On cherche le nombre dont on enlève ${FR(b)} pour obtenir ${FR(c)} : ${FR(c)} + ${FR(b)} = ${FR(a)}`; chk = `${FR(a)} − ${FR(b)} = ${FR(a)} + ${FR(-b)} = ${FR(c)}`; }
+      const from = t === 1 || t === 3 ? ans : a, to = c, lo = Math.min(from, to, 0) - 1, hi = Math.max(Math.max(from, to, 0) + 1, lo + 10);
+      return { q: `Complète l'opération à trou :<div class="calc">${q}</div>`, fields: [{ t: 'num', a: ans }],
+        corr: `${how}.<br>Le nombre cherché est <b>${FR(ans)}</b>.<br><small>Vérification : ${chk}.</small>${lineSVG(lo, hi, 1, [], { jumps: [[from, to]], dots: [{ v: to, l: '' }], labelStep: hi - lo > 18 ? 2 : 1 })}` };
+    }
+  },
+  {
+    name: 'Enchaîner additions et soustractions', gen: () => {
+      let v, ops; do { const n = R(4, 5); v = [...Array(n)].map(() => nz(-12, 12)); ops = v.map((x, i) => i === 0 ? '+' : P(['+', '−'])); } while (ops.filter(o => o === '−').length < 2);
+      const signed = v.map((x, i) => (ops[i] === '−' ? -1 : 1) * x), sp = signed.filter(x => x > 0).reduce((a, b) => a + b, 0), sn = signed.filter(x => x < 0).reduce((a, b) => a + b, 0);
+      const ex = v.map((x, i) => (i ? ` ${ops[i]} ` : '') + FR(x)).join('');
+      let fi = 0; const fields = [], line2 = v.map((x, i) => { if (i === 0) return FR(x); if (ops[i] === '+') return ` + ${FR(x)}`; fields.push({ t: 'num', a: -x }); return ` + [[${fi++}]]`; }).join('');
+      fields.push({ t: 'num', a: sp }, { t: 'num', a: sn }, { t: 'num', a: sp + sn });
+      return { q: `Calcule en transformant d'abord chaque soustraction en addition :<div class="steps"><div class="calc">${ex}</div><div class="calc">= ${line2}</div><div class="calc">= [[${fi}]] + [[${fi + 1}]]</div><div class="calc">= [[${fi + 2}]]</div></div><div class="aide">Ligne 3 : la somme des positifs, puis la somme des négatifs.</div>`,
+        fields, corr: `${ex}<br>= ${signed.map((x, i) => (i ? ' + ' : '') + FR(x)).join('')}<br>= ${F(sp)} + ${FR(sn)}<br>= <b>${FR(sp + sn)}</b>` };
+    }
+  },
+  {
+    name: 'Dénivelé cumulé', gen: () => {
+      const n = R(4, 6); let alts; do { alts = [R(2, 12) * 50]; for (let i = 1; i < n; i++) alts.push(alts[i - 1] + nz(-6, 8) * 50); } while (Math.min(...alts) <= 0 || alts.slice(1).every((a, i) => a > alts[i]) || alts.slice(1).every((a, i) => a < alts[i]));
+      const d = alts.slice(1).map((a, i) => a - alts[i]), up = d.filter(x => x > 0), down = d.filter(x => x < 0), U = up.reduce((a, b) => a + b, 0), Dn = down.reduce((a, b) => a + b, 0), fin = alts[n - 1];
+      return { q: `Voici le profil d'une randonnée qui part de ${F(alts[0])} m d'altitude.${profileSVG(alts)}a) Quel est le dénivelé positif cumulé (le total des montées) ? [[0]] m<br>b) À quelle altitude arrive-t-on ? [[1]] m${BROUILLON}`,
+        fields: [{ t: 'num', a: U }, { t: 'num', a: fin }],
+        corr: `a) On additionne toutes les montées : ${up.map(x => colTerm('+' + F(x), 't1')).join(' + ')} = <b>${F(U)} m</b>.<br>b) ${F(alts[0])} ${d.map(x => x > 0 ? '+ ' + F(x) : '+ ' + FR(x)).join(' ')} = <b>${F(fin)} m</b>.<br><small>Dénivelé négatif cumulé : ${F(Dn)} m. On peut aussi faire ${F(alts[0])} + ${F(U)} + ${FR(Dn)} = ${F(fin)}.</small>` };
     }
   },
 ]);
@@ -1649,6 +2223,7 @@ S.bootTimer = setTimeout(() => { if (!S.cfg) main().innerHTML = `<section class=
 
 // ================= CONNEXION ÉLÈVE =================
 const byName = (a, b) => (a.prenom + a.nom).localeCompare(b.prenom + b.nom, 'fr');
+const byNom = (a, b) => ((a.nom || '') + ' ' + a.prenom).localeCompare((b.nom || '') + ' ' + b.prenom, 'fr');
 function renderLogin() {
   S.user = null; S.prof = false; S.ex = null; setTopbar();
   const opts = S.eleves.slice().sort(byName).map(e => `<option value="${e.id}">${esc(e.prenom)} ${esc((e.nom || '').charAt(0))}.</option>`).join('');
@@ -1722,10 +2297,10 @@ function chooseNotion() {
 function newQuestion() {
   const ex = S.ex, i = chooseNotion(); ex.last = i; ex.recent[i] = ex.recent[i] || [];
   let q, sig;
-  for (let t = 0; t < 12; t++) { q = NOTIONS[ex.d][ex.l][i].gen(); sig = q.q + JSON.stringify(q.fields.map(f => f.a)); if (!ex.recent[i].includes(sig)) break; }
+  for (let t = 0; t < 12; t++) { q = NOTIONS[ex.d][ex.l][i].gen(); sig = (q.pre ? q.pre.q : q.q) + JSON.stringify((q.fields || []).map(f => f.a)); if (!ex.recent[i].includes(sig)) break; }
   ex.recent[i].push(sig); if (ex.recent[i].length > 8) ex.recent[i].shift();
   ex.preQ = q.pre ? q : null; if (q.pre) q = { q: q.pre.q, fields: [q.pre.field], corr: '' };
-  ex.q = q; ex.notion = i; ex.answered = false; ex.count++;
+  ex.q = q; ex.notion = i; ex.answered = false; ex.simpTried = false; ex.count++;
   renderQuestion();
 }
 function fieldHTML(f, i) {
@@ -1742,8 +2317,8 @@ function renderQuestion() {
   const ex = S.ex, q = ex.q, used = new Set();
   let body = q.q.replace(/\[\[(\d)\]\]/g, (m, i) => { used.add(+i); return fieldHTML(q.fields[+i], +i); });
   q.fields.forEach((f, i) => { if (!used.has(i)) body += ['choice', 'multi', 'order'].includes(f.t) ? fieldHTML(f, i) : `<div class="ansline">${fieldHTML(f, i)}</div>`; });
-  const types = q.fields.map(f => f.t), needPad = types.some(t => ['poly', 'expr', 'add'].includes(t));
-  const keys = types.includes('add') && !types.some(t => t === 'poly' || t === 'expr') ? ['+', '(', ')', '−']
+  const types = q.fields.map(f => f.t), needPad = types.some(t => ['poly', 'expr', 'add', 'factors'].includes(t));
+  const keys = types.includes('factors') ? ['×', '²', '³'] : types.includes('add') && !types.some(t => t === 'poly' || t === 'expr') ? ['+', '(', ')', '−']
     : ['+', '−', '×', '÷', '(', ')', ...(q.fields.some(f => f.t === 'poly' && /\^/.test(f.a)) ? ['²', '³'] : [])];
   const pad = needPad ? `<div class="keypad" aria-label="Symboles">${keys.map(k => `<button type="button" class="key" onmousedown="event.preventDefault()" onclick="App.insert('${k}')">${k}</button>`).join('')}</div>` : '';
   $('#exCard').innerHTML = `
@@ -1753,6 +2328,7 @@ function renderQuestion() {
       <div class="qactions"><button class="btn primary big" id="qBtn" type="submit">Valider</button></div>
     </form>`;
   S.lastInput = null;
+  $$('#exCard .echo').forEach(sp => { const src = $(`#exCard [data-i="${sp.dataset.src}"]`); if (src) src.addEventListener('input', () => sp.textContent = src.value.trim() || '…'); });
   $$('#exCard input.f').forEach(inp => inp.addEventListener('focus', () => S.lastInput = inp));
   const first = $('#exCard .f, #exCard .opt, #exCard .chip'); if (first) first.focus();
 }
@@ -1811,6 +2387,10 @@ async function submitAnswer() {
     const r = readField(ex.preQ.pre.field, collect()[0]), m = r.ok ? ex.preQ.pre.valid(r.v) : r.msg;
     if (m) { msg.className = 'qmsg warn'; msg.textContent = m; const inp = $('#exCard input.f'); if (inp) inp.select(); return; }
     ex.q = ex.preQ.then(r.v); ex.preQ = null; renderQuestion(); return;
+  }
+  if (ex.q.retrySimp && !ex.simpTried) { // juste mais pas simplifié : une seconde chance
+    const raws = collect(), notSimp = ex.q.fields.some((f, k) => { if (f.t !== 'poly' || !f.simp) return false; const r = readField(f, raws[k]); return r.ok && pEq(r.v, parsePoly(f.a, f.vars || [])) && !isSimplified(r.raw, f.vars || []); });
+    if (notSimp) { ex.simpTried = true; msg.className = 'qmsg warn'; msg.textContent = 'Ta réponse est juste, mais pas simplifiée : réessaie en l’écrivant le plus simplement possible.'; return; }
   }
   const g = gradeQuestion(ex.q, collect());
   if (g.status === 'invalid') { msg.className = 'qmsg warn'; msg.textContent = g.msg; return; }
@@ -1898,9 +2478,9 @@ async function tabNotes() {
   $('#tabBody').innerHTML = '<p>Chargement des résultats…</p>';
   const all = await safe(() => DB.all(COL.pr)); if (!all) return;
   S.allProg = {}; all.forEach(p => S.allProg[p.id] = p);
-  const rows = S.eleves.slice().sort(byName).map(e => {
+  const rows = S.eleves.slice().sort(byNom).map(e => {
     const p = S.allProg[e.id];
-    return `<tr><th scope="row">${esc(e.prenom)} ${esc(e.nom || '')}${e.illimite ? ' <span class="tag soon small">illimité</span>' : ''}</th>${DOMS.map(d => {
+    return `<tr><th scope="row">${esc(e.nom || '')} ${esc(e.prenom)}${e.illimite ? ' <span class="tag soon small">illimité</span>' : ''}</th>${DOMS.map(d => {
       const cur = currentLevel(p, d), b = cur < 7 ? getBelt(p, d, cur) : null;
       const chips = LEVELS.map((L, l) => `<span class="chip-belt ${isValid(p, d, l) ? 'v' : l === cur ? 'c' : ''}" style="--bc:${L.c}" title="${L.n}${isValid(p, d, l) ? ' validée' : ''}"></span>`).join('');
       const detail = cur >= 7 ? 'Toutes validées' : `${LEVELS[cur].n} : ${b.h.map(h => h.length >= MINQ ? histPct(h) + '%' : '·').join(' ')}`;
@@ -2082,7 +2662,7 @@ const App = {
   },
   exportNotes() {
     const head = ['Prénom', 'Nom']; DOMS.forEach(d => head.push(`${DOM_NAME[d]} : dernière validée`, `${DOM_NAME[d]} : en cours`, `${DOM_NAME[d]} : notions (%)`, `${DOM_NAME[d]} : notes papier`));
-    const rows = S.eleves.slice().sort(byName).map(e => {
+    const rows = S.eleves.slice().sort(byNom).map(e => {
       const p = S.allProg[e.id], r = [e.prenom, e.nom || ''];
       DOMS.forEach(d => {
         const cur = currentLevel(p, d), b = cur < 7 ? getBelt(p, d, cur) : null;
