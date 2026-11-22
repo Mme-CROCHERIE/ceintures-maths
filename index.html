@@ -251,6 +251,41 @@ table.conv .virg{position:absolute;right:-.25em;bottom:.1em;color:var(--red);fon
 .sv-grp{fill:rgba(255,214,0,.32);stroke:#E9A800;stroke-width:2}.sv-cvt{fill:#D9480F}
 .patlab{text-align:center;font-size:14px;line-height:1.35;color:var(--ink)}
 
+/* cartes à ranger */
+.sortq{margin:.8rem 0}
+.sortq .zone{display:flex;flex-wrap:wrap;gap:.45rem;align-content:flex-start;min-height:3.2rem;padding:.5rem;border-radius:10px;cursor:pointer}
+.sortpool{border:2px dashed var(--line);margin-bottom:.7rem}
+.sortcols{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+.sortcol{display:flex;flex-direction:column;border:2px solid var(--line);border-radius:10px;overflow:hidden}
+.sortcol .zone{flex:1;min-height:6rem;border-radius:0}
+.colhead{font:inherit;font-weight:700;padding:.45rem .6rem;border:none;border-bottom:2px solid var(--line);background:var(--blue-soft);color:var(--ink);cursor:pointer;text-align:center}
+.zone.over{background:var(--yellow-soft)}
+.card{font:inherit;font-weight:700;font-size:1.1rem;min-width:3.2em;padding:.4rem .7rem;border:2px solid var(--blue);border-radius:8px;background:var(--paper);color:var(--blue);cursor:grab}
+.card.sel{background:var(--blue);color:#fff;box-shadow:0 0 0 3px var(--yellow)}
+@media (prefers-color-scheme:dark){.card.sel{color:#0D1622}}
+.card.m-ok{background:var(--green);border-color:var(--green);color:#fff}.card.m-ko{background:var(--red);border-color:var(--red);color:#fff;text-decoration:line-through}
+.card.m-miss{background:var(--green-soft);border-color:var(--green);border-style:dashed;color:var(--green)}.card.m-no{opacity:.6}
+.card:disabled{cursor:default;opacity:1}
+@media (max-width:520px){.sortcols{grid-template-columns:1fr}}
+/* aide au survol */
+.aidebox{background:var(--yellow-soft);border-radius:8px;padding:.35rem .7rem;font-size:.92rem;margin-bottom:.6rem}
+.tipped{border-radius:4px;outline:2px dotted var(--yellow);outline-offset:2px;cursor:help}
+.fr.fin input[data-tip]{border-color:var(--yellow)}
+#tipbub{position:absolute;z-index:40;max-width:16em;background:var(--ink);color:var(--paper);padding:.35rem .6rem;border-radius:7px;font-size:.9rem;line-height:1.3;pointer-events:none}
+
+/* leçons et vidéos */
+.resbtns{display:flex;flex-direction:column;gap:.4rem;margin-top:.5rem}
+.resbtns .btn.res{width:100%;justify-content:center;flex-direction:column;gap:0;line-height:1.25;padding:.45rem .8rem}
+.resbtns .btn.res small{font-weight:400;font-size:.82rem;color:var(--ink2)}
+.resbtns .btn.res.video{border-color:color-mix(in srgb,var(--blue) 45%,var(--line))}
+.resbtns.compact{flex-direction:row;flex-wrap:wrap;margin-left:3.4rem}
+.resbtns.compact .btn.res{width:auto;font-size:.85rem;padding:.25rem .6rem}
+.modal-box.wide{max-width:1000px}
+.vidhead{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.6rem}.vidhead h2{margin:0}
+.vidbox{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}
+.vidbox iframe,.vidbox video{position:absolute;inset:0;width:100%;height:100%;border:0}
+.lkbtns{display:inline-flex;gap:.3rem;margin-left:.3rem}
+
 </style>
 </head>
 <body>
@@ -406,6 +441,7 @@ function readField(f, raw) {
     case 'sel': case 'choice': return raw === '' || raw == null ? { ok: false, msg: 'Choisis une réponse.' } : { ok: true, v: +raw };
     case 'multi': return raw.length ? { ok: true, v: raw.map(Number) } : { ok: false, msg: 'Coche au moins une case.' };
     case 'order': return raw.length === f.items.length ? { ok: true, v: raw.map(Number) } : { ok: false, msg: 'Clique sur tous les nombres, du plus petit au plus grand.' };
+    case 'sort': return raw.some(x => x) ? { ok: true, v: raw } : { ok: false, msg: 'Range les cartes : clique sur une carte, puis sur la colonne où elle doit aller.' };
     case 'text': return String(raw).trim() ? { ok: true, v: raw } : { ok: false, msg: 'Écris ta réponse dans la case.' };
     case 'list': {
       const t = String(raw).replace(/\bet\b/g, ' ').trim(); if (!t) return { ok: false, msg: 'Écris la liste des nombres.' };
@@ -451,6 +487,7 @@ function checkField(f, r) {
     case 'sel': case 'choice': return v === f.a;
     case 'multi': return v.length === f.a.length && f.a.every(i => v.includes(i));
     case 'order': { const s = f.items.slice().sort((a, b) => a - b); return v.every((x, i) => f.items[x] === s[i]); }
+    case 'sort': return v.every((x, i) => x === f.a[i]);
     case 'text': return f.a.map(normTxt).includes(normTxt(v));
     case 'list': { const a = [...new Set(v)].sort((x, y) => x - y), b = f.a.slice().sort((x, y) => x - y); return a.length === b.length && a.every((x, i) => x === b[i]); }
     case 'signed': return v.length === f.a.length && v.every((x, i) => Math.abs(x - f.a[i]) < 1e-9);
@@ -941,8 +978,8 @@ const NOTIONS_CL = [
           if (c0 === 0) return { q: `Complète :<div class="calc">${a} ${S} ${o} ${b} ${S} = ( [[0]] ${o} [[1]] ) ${S} = [[2]] ${S}</div>`, fields: [{ t: 'num', a }, { t: 'num', a: b }, { t: 'num', a: r }],
             corr: `${a} ${S} ${o} ${b} ${S} = (${a} ${o} ${b}) ${S} = <b>${r} ${S}</b><br><small>${a} ${sy} ${minus ? 'moins' : 'et'} ${b} ${sy}, ça fait ${r} ${sy}.</small>` };
           const k = P([R(11, 40), P([2.3, 5.3, 8.2, 9.7, 1.7])]), kf = F(k);
-          return { q: `Ici, ${S} remplace le nombre ${kf}. Complète :<div class="calc">${a} × ${kf} ${o} ${b} × ${kf} = ${a} ${S} ${o} ${b} ${S} = [[0]] ${S} = [[1]] × ${kf}</div>`, fields: [{ t: 'num', a: r }, { t: 'num', a: r }],
-            corr: `${a} × ${kf} ${o} ${b} × ${kf}, c'est ${a} ${S} ${o} ${b} ${S} = <b>${r}</b> ${S}, donc <b>${r} × ${kf}</b>.<br><small>${a} fois ${kf} ${minus ? 'moins' : 'et'} ${b} fois ${kf}, ça fait ${r} fois ${kf}.</small>` };
+          return { q: `Complète :<div class="calc">${a} ${S} ${o} ${b} ${S} = [[0]] ${S}</div>Ici, on remplace ${S} par le nombre ${kf}. Complète :<div class="calc">${a} × ${kf} ${o} ${b} × ${kf} = [[1]] × ${kf}</div>`, fields: [{ t: 'num', a: r }, { t: 'num', a: r }],
+            corr: `${a} ${S} ${o} ${b} ${S} = <b>${r} ${S}</b><br>En remplaçant ${S} par ${kf} : ${a} × ${kf} ${o} ${b} × ${kf} = <b>${r} × ${kf}</b><br><small>${a} fois ${kf} ${minus ? 'moins' : 'et'} ${b} fois ${kf}, ça fait ${r} fois ${kf}.</small>` };
         }
         const c = c0 - 2;
         if (c === 0) { // factoriser
@@ -1107,9 +1144,32 @@ const NOTIONS_FR = [
     },
     {
       name: 'Vocabulaire : multiple, diviseur, numérateur…', gen: () => {
-        if (bag('fr-b-voc', 2)) { const n = R(2, 9), m = n * R(2, 12); const big = RS(); return { q: `Complète la phrase.<div class="phrase">${big ? m : n} est un [[0]] de ${big ? n : m}.</div>`, fields: [{ t: 'sel', o: VOC4, a: big ? 0 : 1 }], corr: `${m} = ${n} × ${m / n}, donc ${big ? `${m} est un <b>multiple</b> de ${n}` : `${n} est un <b>diviseur</b> de ${m}`}.` }; }
-        const a = R(1, 20), b = R(2, 20), num = RS();
-        return { q: `Complète la phrase.<div class="phrase">Dans ${frac(a, b)}, le nombre ${num ? a : b} est le [[0]].</div>`, fields: [{ t: 'sel', o: VOC4, a: num ? 2 : 3 }], corr: `Le nombre du haut est le numérateur, celui du bas est le dénominateur : ${num ? a : b} est le <b>${num ? 'numérateur' : 'dénominateur'}</b>.` };
+        const t = bag('fr-b-voc', 4);
+        if (t === 0) { const n = R(2, 9), m = n * R(2, 12); const big = RS(); return { q: `Complète la phrase.<div class="phrase">${big ? m : n} est un [[0]] de ${big ? n : m}.</div>`, fields: [{ t: 'sel', o: VOC4, a: big ? 0 : 1 }], corr: `${m} = ${n} × ${m / n}, donc ${big ? `${m} est un <b>multiple</b> de ${n}` : `${n} est un <b>diviseur</b> de ${m}`}.` }; }
+        if (t === 1) { const a = R(1, 20), b = R(2, 20), num = RS();
+          return { q: `Complète la phrase.<div class="phrase">Dans ${frac(a, b)}, le nombre ${num ? a : b} est le [[0]].</div>`, fields: [{ t: 'sel', o: VOC4, a: num ? 2 : 3 }], corr: `Le nombre du haut est le numérateur, celui du bas est le dénominateur : ${num ? a : b} est le <b>${num ? 'numérateur' : 'dénominateur'}</b>.` }; }
+        if (t === 2) { // phrase à compléter librement : toute réponse juste est acceptée
+          const N = P([12, 18, 20, 24, 30, 36, 40]), k = P([3, 4, 5, 6, 7, 8, 9]), dv = divisors(N), w = bag('fr-b-libre', 4);
+          const ent = x => Number.isInteger(x) && x > 0;
+          const C = [
+            { txt: `[[0]] est un diviseur de ${N}.`, ok: x => ent(x) && N % x === 0, ex: dv[R(1, dv.length - 2)], bad: x => `${N} ÷ ${F(x)} ne tombe pas juste${ent(x) && x < N ? ` (il reste ${N % x})` : ''}`, why: x => `${N} = ${x} × ${N / x}`, all: `Les diviseurs de ${N} sont ${dv.join(', ')}.` },
+            { txt: `[[0]] est un multiple de ${k}.`, ok: x => ent(x) && x % k === 0, ex: k * R(2, 9), bad: x => `${F(x)} n'est pas dans la table de ${k}`, why: x => `${x} = ${k} × ${x / k}`, all: `Les multiples de ${k} sont ${[1, 2, 3, 4, 5, 6].map(j => j * k).join(', ')}…` },
+            { txt: `${N} est un multiple de [[0]].`, ok: x => ent(x) && N % x === 0, ex: dv[R(1, dv.length - 2)], bad: x => `${N} n'est pas dans la table de ${F(x)}`, why: x => `${N} = ${x} × ${N / x}`, all: `${N} est un multiple de ${dv.join(', ')}.` },
+            { txt: `${k} est un diviseur de [[0]].`, ok: x => ent(x) && x % k === 0, ex: k * R(2, 9), bad: x => `${F(x)} ÷ ${k} ne tombe pas juste`, why: x => `${x} = ${k} × ${x / k}`, all: `Tous les multiples de ${k} conviennent : ${[1, 2, 3, 4, 5, 6].map(j => j * k).join(', ')}…` },
+          ][w];
+          return { q: `Complète la phrase avec un nombre de ton choix.<div class="phrase">${C.txt}</div><div class="aide">Plusieurs réponses sont possibles : écris-en une seule.</div>`,
+            fields: [{ t: 'num' }], sol: [String(C.ex)], check: v => C.ok(v[0]), fieldOk: v => [C.ok(v[0])],
+            corr: `${C.all}`, corrOk: v => `${C.why(v[0])}, donc ta phrase est juste.<br><small>${C.all}</small>`,
+            corrKo: v => `<b>Non : ${C.bad(v[0])}.</b><br>${C.all}` };
+        }
+        // ranger des cartes : diviseurs d'un côté, multiples de l'autre
+        const N = P([8, 10, 12, 15, 16, 18, 20, 24]), dv = divisors(N).filter(x => x !== N), mu = [2, 3, 4, 5, 10].map(j => j * N);
+        const D = SH(dv).slice(0, Math.min(4, dv.length)), M = SH(mu).slice(0, 3), ni = new Set();
+        while (ni.size < 2) { const x = R(2, 3 * N); if (N % x && x % N && !D.includes(x)) ni.add(x); }
+        const items = SH([...D.map(x => [x, 'a']), ...M.map(x => [x, 'b']), ...[...ni].map(x => [x, ''])]);
+        return { q: `Range les cartes : clique sur une carte, puis sur la colonne où elle doit aller.<div class="aide">Les cartes qui ne sont ni l'un ni l'autre restent en haut.</div>`,
+          fields: [{ t: 'sort', items: items.map(x => x[0]), a: items.map(x => x[1]), labels: [`Diviseurs de ${N}`, `Multiples de ${N}`] }],
+          corr: `<b>Diviseurs de ${N}</b> (${N} ÷ … tombe juste) : ${divisors(N).join(', ')}.<br><b>Multiples de ${N}</b> (dans la table de ${N}) : ${[1, 2, 3, 4, 5].map(j => j * N).join(', ')}, ${10 * N}…<br><b>Ni l'un ni l'autre</b> : ${[...ni].sort((x, y) => x - y).join(', ')}.` };
       }
     },
   ],
@@ -2257,8 +2317,10 @@ function renderHome() {
     const cur = currentLevel(p, d);
     const rows = LEVELS.map((L, l) => {
       const b = getBelt(p, d, l), open = isOpen(p, d, l), valid = b.v;
-      const links = (S.cfg.links[keyOf(d, l)] || []);
-      const linksHTML = (open && links.length) ? `<ul class="links">${links.map(k => `<li><a href="${esc(k.u)}" target="_blank" rel="noopener">${esc(k.t)}</a></li>`).join('')}</ul>` : '';
+      const links = (S.cfg.links[keyOf(d, l)] || []).map((k, j) => ({ ...k, j })), others = links.filter(k => !k.k || k.k === 'lien');
+      const res = links.filter(k => k.k === 'lecon' || k.k === 'video');
+      const resHTML = (open && res.length) ? `<div class="resbtns ${valid ? 'compact' : ''}">${res.map(k => `<button class="btn res ${k.k}" onclick="App.openRes('${d}',${l},${k.j})"><span>${k.k === 'lecon' ? 'Voir la leçon' : 'Voir la vidéo'}</span>${k.t && k.t.toLowerCase() !== 'leçon' ? `<small>${esc(k.t)}</small>` : ''}</button>`).join('')}</div>` : '';
+      const linksHTML = (open && others.length) ? `<ul class="links">${others.map(k => `<li><a href="${esc(resUrl(k.u))}" target="_blank" rel="noopener">${esc(k.t)}</a></li>`).join('')}</ul>` : '';
       let state, action = '';
       if (valid) state = `<span class="tag ok">Validée</span>`;
       else if (!open) state = `<span class="tag lock">À débloquer</span>`;
@@ -2272,7 +2334,7 @@ function renderHome() {
       return `<li class="beltrow ${valid ? 'valid' : open ? 'open' : 'locked'} ${isCur ? 'current' : ''}">
         <div class="beltrow-head">${beltSVG(l, isCur ? 60 : 44)}<div><div class="bname">Ceinture ${L.n.toLowerCase()}</div>${state}</div></div>
         ${isCur && hasGen(d, l) ? `<div class="curbox"><div class="ring">${ringSVG(b, 118)}</div><ul class="notions">${notionRows(d, l, b)}</ul></div>${action}` : ''}
-        ${linksHTML}</li>`;
+        ${resHTML}${linksHTML}</li>`;
     }).join('');
     return `<section class="domcol"><h2>${DOM_NAME[d]}</h2><ol class="belts">${rows}</ol></section>`;
   }).join('');
@@ -2281,6 +2343,31 @@ function renderHome() {
     ${canTrain() ? (S.user.illimite && !S.cfg.active ? `<p class="note">Tu as un accès permanent aux exercices.</p>` : '')
       : `<p class="note warn">Les exercices s'ouvrent pendant le cours, quand ton professeur les active. <button class="btn small" onclick="App.refreshHome()">Vérifier à nouveau</button></p>`}
     </div><div class="domgrid">${cols}</div>`;
+}
+
+// ---------- leçons et vidéos ----------
+// une adresse sans « https:// » (par ex. lecons/fractions-blanche.pdf) est un fichier du site lui-même
+function resUrl(u) { return u; }
+function normUrl(u) {
+  u = u.trim(); if (/^https?:\/\//i.test(u)) return u;
+  const first = u.split('/')[0];
+  if (/^www\./i.test(u) || (/\.[a-z]{2,}$/i.test(first) && !/\.(pdf|mp4|webm|ogg|mov|m4v|html?|png|jpe?g|docx?|pptx?|odt|odp)$/i.test(first))) return 'https://' + u;
+  return u;
+}
+function videoEmbed(u) {
+  let m;
+  if ((m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{6,})/i))) return { kind: 'iframe', src: `https://www.youtube-nocookie.com/embed/${m[1]}?rel=0` };
+  if ((m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([\w-]+)/i))) return { kind: 'iframe', src: `https://drive.google.com/file/d/${m[1]}/preview` };
+  if ((m = u.match(/vimeo\.com\/(\d+)/i))) return { kind: 'iframe', src: `https://player.vimeo.com/video/${m[1]}` };
+  if (/\.(mp4|webm|ogg|m4v|mov)(\?|#|$)/i.test(u)) return { kind: 'video', src: u };
+  return null;
+}
+function openResource(k) {
+  const v = k.k === 'video' ? videoEmbed(k.u) : null;
+  if (!v) { window.open(k.u, '_blank', 'noopener'); return; }
+  const player = v.kind === 'video' ? `<video src="${esc(v.src)}" controls autoplay playsinline></video>` : `<iframe src="${esc(v.src)}" title="${esc(k.t || 'Vidéo')}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+  modal(`<div class="vidhead"><h2>${esc(k.t || 'Vidéo')}</h2><button class="btn" onclick="closeModal()">Fermer</button></div><div class="vidbox">${player}</div><p class="hint"><a href="${esc(k.u)}" target="_blank" rel="noopener">Ouvrir la vidéo dans un nouvel onglet</a></p>`);
+  $('#modal .modal-box').classList.add('wide');
 }
 
 // ================= EXERCISEUR =================
@@ -2310,13 +2397,18 @@ function fieldHTML(f, i) {
   if (f.t === 'sel') return `<select class="f" data-i="${i}" ${lab}><option value="">choisir…</option>${f.o.map((o, j) => `<option value="${j}">${o}</option>`).join('')}</select>`;
   if (f.t === 'choice') return `<div class="choices" data-i="${i}" role="radiogroup">${f.o.map((o, j) => `<button type="button" class="opt" role="radio" aria-checked="false" data-v="${j}" onclick="App.pick(this)">${o}</button>`).join('')}</div>`;
   if (f.t === 'multi') return `<div class="choices multi" data-i="${i}">${f.o.map((o, j) => `<button type="button" class="opt" aria-pressed="false" data-v="${j}" onclick="App.toggle(this)">${o}</button>`).join('')}</div>`;
+  if (f.t === 'sort') {
+    const card = (v, j) => `<button type="button" class="card" data-v="${j}" draggable="true" aria-pressed="false" onclick="App.sortPick(this)">${F(v)}</button>`;
+    return `<div class="sortq" data-i="${i}"><div class="sortpool zone" data-z="" onclick="App.sortDrop(this,event)" aria-label="Cartes à ranger">${f.items.map(card).join('')}</div>
+      <div class="sortcols">${f.labels.map((lab, k) => `<div class="sortcol"><button type="button" class="colhead" onclick="App.sortDrop(this.nextElementSibling,event)">${lab}</button><div class="zone" data-z="${'ab'[k]}" onclick="App.sortDrop(this,event)" aria-label="${lab}"></div></div>`).join('')}</div></div>`;
+  }
   if (f.t === 'order') return `<div class="order" data-i="${i}"><div class="pool">${f.items.map((v, j) => `<button type="button" class="chip" data-v="${j}" onclick="App.orderMove(this)">${F(v)}</button>`).join('')}</div><div class="seqlabel">Ton rangement :</div><div class="seq" aria-live="polite"></div></div>`;
   return `<input class="f f-wide" data-i="${i}" ${lab} autocomplete="off" spellcheck="false" autocapitalize="off">`;
 }
 function renderQuestion() {
   const ex = S.ex, q = ex.q, used = new Set();
   let body = q.q.replace(/\[\[(\d)\]\]/g, (m, i) => { used.add(+i); return fieldHTML(q.fields[+i], +i); });
-  q.fields.forEach((f, i) => { if (!used.has(i)) body += ['choice', 'multi', 'order'].includes(f.t) ? fieldHTML(f, i) : `<div class="ansline">${fieldHTML(f, i)}</div>`; });
+  q.fields.forEach((f, i) => { if (!used.has(i)) body += ['choice', 'multi', 'order', 'sort'].includes(f.t) ? fieldHTML(f, i) : `<div class="ansline">${fieldHTML(f, i)}</div>`; });
   const types = q.fields.map(f => f.t), needPad = types.some(t => ['poly', 'expr', 'add', 'factors'].includes(t));
   const keys = types.includes('factors') ? ['×', '²', '³'] : types.includes('add') && !types.some(t => t === 'poly' || t === 'expr') ? ['+', '(', ')', '−']
     : ['+', '−', '×', '÷', '(', ')', ...(q.fields.some(f => f.t === 'poly' && /\^/.test(f.a)) ? ['²', '³'] : [])];
@@ -2330,8 +2422,39 @@ function renderQuestion() {
   S.lastInput = null;
   $$('#exCard .echo').forEach(sp => { const src = $(`#exCard [data-i="${sp.dataset.src}"]`); if (src) src.addEventListener('input', () => sp.textContent = src.value.trim() || '…'); });
   $$('#exCard input.f').forEach(inp => inp.addEventListener('focus', () => S.lastInput = inp));
-  const first = $('#exCard .f, #exCard .opt, #exCard .chip'); if (first) first.focus();
+  $$('#exCard .card').forEach(c => c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', c.dataset.v); App.sortPick(c, true); }));
+  $$('#exCard .sortq .zone').forEach(z => { z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); }); z.addEventListener('dragleave', () => z.classList.remove('over'));
+    z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); App.sortDrop(z, e); }); });
+  applyHelp();
+  const first = $('#exCard .f, #exCard .opt, #exCard .chip, #exCard .card'); if (first) first.focus();
 }
+// ---------- aide au survol (ceinture blanche de fractions) ----------
+// s'active après au moins 2 erreurs sur la notion, tant que la réussite reste sous 50 %
+const AIDE_NOTIONS = { 'fr-0': [0, 3] };
+function needHelp() {
+  const ex = S.ex, list = AIDE_NOTIONS[ex.key]; if (!list || !list.includes(ex.notion)) return false;
+  const h = ex.belt.h[ex.notion]; return h.split('').filter(c => c === '0').length >= 2 && histPct(h) < 50;
+}
+function applyHelp() {
+  const ex = S.ex; if (!needHelp()) return;
+  const aire = ex.notion === 0, tips = aire ? ['Numérateur : le nombre de parts grises', 'Dénominateur : le nombre de parts en tout (toutes de la même taille)'] : ['Numérateur : le nombre du haut', 'Dénominateur : le nombre du bas'];
+  let n = 0;
+  $$('#qForm .fr').forEach(fr => { const kids = [...fr.children].filter(k => k.matches('span, input')); if (kids.length !== 2) return;
+    kids.forEach((k, j) => { k.dataset.tip = tips[j]; if (k.tagName === 'SPAN') { k.tabIndex = 0; k.classList.add('tipped'); } n++; }); });
+  if (n) $('#qForm').insertAdjacentHTML('afterbegin', `<div class="aidebox">Aide : passe la souris (ou appuie) sur ${aire ? 'les cases' : 'les nombres'} de la fraction.</div>`);
+}
+function showTip(el) {
+  let t = $('#tipbub'); if (!t) { t = document.createElement('div'); t.id = 'tipbub'; t.setAttribute('role', 'tooltip'); document.body.appendChild(t); }
+  t.textContent = el.dataset.tip; t.hidden = false; const r = el.getBoundingClientRect();
+  if (el.tagName === 'INPUT' && r.right + t.offsetWidth + 16 < window.innerWidth) { // case à remplir : bulle à droite, pour ne pas cacher l'autre case
+    t.style.left = (r.right + 10) + 'px'; t.style.top = (r.top + window.scrollY + r.height / 2 - t.offsetHeight / 2) + 'px'; return; }
+  t.style.left = Math.max(8, Math.min(window.innerWidth - t.offsetWidth - 8, r.left + r.width / 2 - t.offsetWidth / 2)) + 'px';
+  t.style.top = (r.top + window.scrollY - t.offsetHeight - 8 < window.scrollY ? r.bottom + window.scrollY + 8 : r.top + window.scrollY - t.offsetHeight - 8) + 'px';
+}
+function hideTip() { const t = $('#tipbub'); if (t) t.hidden = true; }
+['mouseover', 'focusin'].forEach(ev => document.addEventListener(ev, e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el) showTip(el); }));
+['mouseout', 'focusout'].forEach(ev => document.addEventListener(ev, e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el) hideTip(); }));
+document.addEventListener('touchstart', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el) showTip(el); else hideTip(); }, { passive: true });
 function collect() {
   const card = $('#exCard'), q = S.ex.q;
   return q.fields.map((f, i) => {
@@ -2339,6 +2462,7 @@ function collect() {
     if (f.t === 'choice') { const b = $(`.choices[data-i="${i}"] .opt.on`, card); return b ? b.dataset.v : ''; }
     if (f.t === 'multi') return $$(`.choices[data-i="${i}"] .opt.on`, card).map(b => b.dataset.v);
     if (f.t === 'order') return $$(`.order[data-i="${i}"] .seq .chip`, card).map(b => b.dataset.v);
+    if (f.t === 'sort') return f.items.map((x, j) => $(`.sortq[data-i="${i}"] .card[data-v="${j}"]`, card).closest('.zone').dataset.z);
     return $(`[data-i="${i}"]`, card).value;
   });
 }
@@ -2347,6 +2471,7 @@ function answerText(f) {
     case 'num': return F(f.a); case 'frac': return frac(f.n, f.d);
     case 'sel': case 'choice': return f.o[f.a]; case 'multi': return f.a.map(i => f.o[i]).join(' ; ');
     case 'order': return f.items.slice().sort((a, b) => a - b).map(F).join(' &lt; ');
+    case 'sort': return f.labels.map((lab, k) => `${lab} : ${f.items.filter((x, j) => f.a[j] === 'ab'[k]).sort((x, y) => x - y).join(', ')}`).join(' ; ');
     case 'text': return esc(f.a[0]); case 'list': return f.a.join(', ');
     case 'add': return f.a.map(FR).join(' + ');
     case 'poly': return esc(f.a).replace(/\^2/g, '²').replace(/\^3/g, '³').replace(/\+/g, ' + ');
@@ -2374,6 +2499,9 @@ function markFields(q, raws, allOk) {
       $$(`.choices[data-i="${i}"] .opt`, card).forEach(o => { const v = +o.dataset.v; if (o.classList.contains('on')) o.classList.add(v === f.a ? 'm-ok' : 'm-ko'); else if (v === f.a && !s) o.classList.add('m-miss'); else o.classList.add('m-no'); });
     } else if (f.t === 'order') {
       $(`.order[data-i="${i}"] .seq`, card).classList.add(s ? 'f-ok' : 'f-ko');
+    } else if (f.t === 'sort') {
+      $$(`.sortq[data-i="${i}"] .card`, card).forEach(c => { const j = +c.dataset.v, z = c.closest('.zone').dataset.z, good = f.a[j];
+        c.classList.add(z === good ? (z ? 'm-ok' : 'm-no') : z ? 'm-ko' : 'm-miss'); c.title = good ? f.labels['ab'.indexOf(good)] : "ni l'un ni l'autre"; });
     } else if (f.t === 'frac') {
       [0, 1].forEach(k => $(`[data-i="${i}"][data-k="${k}"]`, card).classList.add((Array.isArray(s) ? s[k] : s) ? 'f-ok' : 'f-ko'));
     } else { const el = $(`[data-i="${i}"]`, card); if (el) el.classList.add(s ? 'f-ok' : 'f-ko'); }
@@ -2397,7 +2525,8 @@ async function submitAnswer() {
   ex.answered = true; const ok = g.status === 'ok', b = ex.belt, i = ex.notion;
   markFields(ex.q, collect(), ok);
   b.h[i] = (b.h[i] + (ok ? '1' : '0')).slice(-FENETRE); b.n = (b.n || 0) + 1;
-  $$('#exCard .f, #exCard .opt, #exCard .chip, #exCard .key').forEach(e => e.disabled = true);
+  $$('#exCard .f, #exCard .opt, #exCard .chip, #exCard .key, #exCard .card, #exCard .colhead').forEach(e => e.disabled = true);
+  hideTip();
   msg.className = 'qmsg ' + (ok ? 'good' : 'bad');
   msg.innerHTML = `<div class="verdict">${ok ? 'Bonne réponse !' : "Ce n'est pas la bonne réponse."}</div><div class="corr">${pickCorr(ex.q, ok)}</div>`;
   const justValidated = !b.v && b.h.every(mastered);
@@ -2439,7 +2568,7 @@ function startExerciser(d, l, belt, persist) {
 }
 
 // ================= ESPACE PROFESSEUR =================
-const TABS = [['eleves', 'Élèves'], ['notes', 'Suivi et notes'], ['exos', 'Exercices'], ['liens', 'Liens'], ['activation', 'Activation'], ['params', 'Paramètres']];
+const TABS = [['eleves', 'Élèves'], ['notes', 'Suivi et notes'], ['exos', 'Exercices'], ['liens', 'Leçons et vidéos'], ['activation', 'Activation'], ['params', 'Paramètres']];
 function renderProf(tab) {
   S.tab = tab || S.tab; setTopbar();
   main().innerHTML = `<nav class="tabs" role="tablist">${TABS.map(([k, n]) => `<button role="tab" aria-selected="${k === S.tab}" class="tab ${k === S.tab ? 'on' : ''}" onclick="App.tab('${k}')">${n}${k === 'activation' ? `<span class="dot ${S.cfg.active ? 'on' : ''}"></span>` : ''}</button>`).join('')}</nav><section id="tabBody" class="sheet wide"></section>`;
@@ -2534,13 +2663,22 @@ function examples(d, l) {
 // ----- liens -----
 function tabLiens() {
   const opt = DOMS.map(d => `<option value="${d}">${DOM_NAME[d]}</option>`).join(''), optL = LEVELS.map((L, l) => `<option value="${l}">${L.n}</option>`).join('');
-  const list = DOMS.map(d => LEVELS.map((L, l) => { const ls = S.cfg.links[keyOf(d, l)] || []; if (!ls.length) return ''; return `<li>${beltSVG(l, 34)}<b>${DOM_NAME[d]}, ${L.n.toLowerCase()}</b><ul>${ls.map((k, j) => `<li><a href="${esc(k.u)}" target="_blank" rel="noopener">${esc(k.t)}</a> <button class="btn small danger" onclick="App.delLink('${d}',${l},${j})">Supprimer</button></li>`).join('')}</ul></li>`; }).join('')).join('');
-  $('#tabBody').innerHTML = `<h2>Liens vers les leçons et vidéos</h2><p class="hint">Les élèves voient les liens des ceintures validées et de la ceinture en cours, même quand les exercices sont fermés.</p>
+  const KIND = { lecon: 'Leçon', video: 'Vidéo', lien: 'Lien' };
+  const list = DOMS.map(d => LEVELS.map((L, l) => { const ls = S.cfg.links[keyOf(d, l)] || []; if (!ls.length) return ''; return `<li>${beltSVG(l, 34)}<b>${DOM_NAME[d]}, ${L.n.toLowerCase()}</b><ul>${ls.map((k, j) => `<li><span class="tag ${k.k === 'video' ? 'go' : k.k === 'lecon' ? 'ok' : 'soon'}">${KIND[k.k || 'lien']}</span> <a href="${esc(k.u)}" target="_blank" rel="noopener">${esc(k.t || KIND[k.k || 'lien'])}</a>
+    <span class="lkbtns">${j ? `<button class="btn small" onclick="App.moveLink('${d}',${l},${j},-1)" aria-label="Monter">↑</button>` : ''}${j < ls.length - 1 ? `<button class="btn small" onclick="App.moveLink('${d}',${l},${j},1)" aria-label="Descendre">↓</button>` : ''}<button class="btn small danger" onclick="App.delLink('${d}',${l},${j})">Supprimer</button></span></li>`).join('')}</ul></li>`; }).join('')).join('');
+  $('#tabBody').innerHTML = `<h2>Leçons, vidéos et liens</h2>
+    <p class="hint">Pour chaque ceinture, les élèves voient les boutons « Voir la leçon » et « Voir la vidéo » sous le bouton d'entraînement, même quand les exercices sont fermés. Ils voient aussi ceux des ceintures déjà validées, pour réviser.</p>
     <form class="row-form" onsubmit="event.preventDefault();App.addLink()">
-      <label>Ceinture<select id="lkD">${opt}</select></label><label>Couleur<select id="lkL">${optL}</select></label>
-      <label class="grow">Titre<input id="lkT" required placeholder="Leçon : priorités opératoires"></label><label class="grow">Adresse<input id="lkU" required placeholder="https://…"></label>
-      <button class="btn primary" type="submit">Ajouter le lien</button></form>
-    ${list ? `<ul class="linklist">${list}</ul>` : '<p class="empty">Aucun lien pour l\'instant.</p>'}`;
+      <label>Ceinture<select id="lkD" onchange="App.lkNotions()">${opt}</select></label><label>Couleur<select id="lkL" onchange="App.lkNotions()">${optL}</select></label>
+      <label>Type<select id="lkK" onchange="App.lkNotions()"><option value="lecon">Leçon (PDF)</option><option value="video">Vidéo</option><option value="lien">Autre lien</option></select></label>
+      <label class="grow">Titre affiché<input id="lkT" list="lkNot" placeholder="Leçon"><datalist id="lkNot"></datalist></label><label class="grow">Adresse<input id="lkU" required placeholder="lecons/fractions-blanche.pdf ou https://…"></label>
+      <button class="btn primary" type="submit">Ajouter</button></form>
+    <details class="import"><summary>Où mettre les fichiers PDF et les vidéos ?</summary>
+      <p class="hint"><b>Sur votre GitHub (le plus simple pour les PDF)</b> : dans le dépôt ceintures-maths, « Add file » puis « Upload files », déposez le fichier, puis « Commit changes ». Son adresse est alors simplement son nom, par exemple <code>fractions-blanche.pdf</code> (ou <code>lecons/fractions-blanche.pdf</code> s'il est dans un dossier lecons). Évitez les espaces et les accents dans les noms de fichiers. GitHub refuse les fichiers de plus de 25 Mo déposés de cette façon.</p>
+      <p class="hint"><b>Pour les vidéos</b> : une vidéo de moins de 25 Mo (fichier .mp4) peut aller sur GitHub comme un PDF. Sinon, mettez-la sur YouTube en « non répertoriée », ou sur Google Drive en partage « Tous les utilisateurs disposant du lien », puis collez le lien de partage. Les vidéos YouTube, Google Drive, Vimeo et .mp4 s'ouvrent directement dans la page, les autres dans un nouvel onglet.</p>
+      <p class="hint"><b>Titre</b> : pour une vidéo, indiquez la notion (par exemple « Fraction d'aire »), elle s'affiche en petit sous « Voir la vidéo ». Pour une leçon, vous pouvez laisser le titre vide.</p></details>
+    ${list ? `<ul class="linklist">${list}</ul>` : '<p class="empty">Aucune leçon ni vidéo pour l\'instant.</p>'}`;
+  App.lkNotions();
 }
 // ----- activation -----
 function tabActivation() {
@@ -2585,6 +2723,11 @@ const App = {
   submit() { submitAnswer(); },
   pick(b) { $$('.opt', b.parentNode).forEach(o => { o.classList.remove('on'); o.setAttribute('aria-checked', 'false'); }); b.classList.add('on'); b.setAttribute('aria-checked', 'true'); },
   toggle(b) { b.classList.toggle('on'); b.setAttribute('aria-pressed', b.classList.contains('on')); },
+  sortPick(c, force) { if (c.disabled) return; const q = c.closest('.sortq'), was = c.classList.contains('sel');
+    $$('.card.sel', q).forEach(x => { x.classList.remove('sel'); x.setAttribute('aria-pressed', 'false'); });
+    if (!was || force) { c.classList.add('sel'); c.setAttribute('aria-pressed', 'true'); } },
+  sortDrop(z, e) { if (e && e.target && e.target.classList && e.target.classList.contains('card') && e.type === 'click') return; if (S.ex && S.ex.answered) return;
+    const q = z.closest('.sortq'), c = $('.card.sel', q); if (!c) return; z.appendChild(c); c.classList.remove('sel'); c.setAttribute('aria-pressed', 'false'); c.focus(); },
   orderMove(b) { const o = b.closest('.order'); (b.parentNode.classList.contains('pool') ? $('.seq', o) : $('.pool', o)).appendChild(b); },
   insert(k) {
     // case visée : celle où se trouve le curseur, sinon la dernière utilisée dans CETTE question, sinon la première case de texte
@@ -2681,10 +2824,22 @@ const App = {
   examples,
   testBelt(d, l) { startExerciser(d, l, emptyBelt(), false); },
   async addLink() {
-    const d = $('#lkD').value, l = +$('#lkL').value, t = $('#lkT').value.trim(); let u = $('#lkU').value.trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    const k = keyOf(d, l), arr = (S.cfg.links[k] || []).concat([{ t, u }]);
+    const d = $('#lkD').value, l = +$('#lkL').value, kind = $('#lkK').value, u = normUrl($('#lkU').value);
+    const t = $('#lkT').value.trim() || ({ lecon: 'Leçon', video: 'Vidéo', lien: 'Lien' })[kind];
+    if (!u) return toast("Indiquez l'adresse du fichier ou du lien.");
+    const k = keyOf(d, l), arr = (S.cfg.links[k] || []).concat([{ t, u, k: kind }]);
     if (await safe(() => DB.merge(COL.cfg, 'main', { links: { [k]: arr } })) === undefined) return;
-    S.cfg.links[k] = arr; toast('Lien ajouté.'); tabLiens(); $('#lkD').value = d; $('#lkL').value = l;
+    S.cfg.links[k] = arr; toast(kind === 'lecon' ? 'Leçon ajoutée.' : kind === 'video' ? 'Vidéo ajoutée.' : 'Lien ajouté.'); tabLiens(); $('#lkD').value = d; $('#lkL').value = l; $('#lkK').value = kind; App.lkNotions();
+  },
+  lkNotions() {
+    const d = $('#lkD').value, l = +$('#lkL').value, kind = $('#lkK').value, dl = $('#lkNot'), inp = $('#lkT');
+    dl.innerHTML = kind === 'video' && hasGen(d, l) ? [0, 1, 2, 3].map(i => `<option value="${esc(notionName(d, l, i))}">`).join('') : '';
+    inp.placeholder = kind === 'video' ? 'Fraction d’aire (choisir la notion)' : kind === 'lecon' ? 'Leçon (facultatif)' : 'Titre du lien';
+  },
+  openRes(d, l, j) { const k = (S.cfg.links[keyOf(d, l)] || [])[j]; if (k) openResource(k); },
+  async moveLink(d, l, j, dir) {
+    const k = keyOf(d, l), arr = (S.cfg.links[k] || []).slice(), t = arr[j]; arr[j] = arr[j + dir]; arr[j + dir] = t;
+    if (await safe(() => DB.merge(COL.cfg, 'main', { links: { [k]: arr } })) === undefined) return; S.cfg.links[k] = arr; tabLiens(); $('#lkD').value = d; $('#lkL').value = l; App.lkNotions();
   },
   async delLink(d, l, j) { const k = keyOf(d, l), arr = (S.cfg.links[k] || []).filter((x, i) => i !== j); if (await safe(() => DB.merge(COL.cfg, 'main', { links: { [k]: arr } })) === undefined) return; S.cfg.links[k] = arr; tabLiens(); },
   async setActive(v) { if (await safe(() => DB.merge(COL.cfg, 'main', { active: v })) === undefined) return; S.cfg.active = v; toast(v ? 'Exercices ouverts.' : 'Exercices fermés.'); renderProf('activation'); },
